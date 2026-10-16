@@ -1,0 +1,18 @@
+# Dependencies and build output
+node_modules/
+dist/
+.wrangler/
+
+# Local secrets and environment
+.dev.vars*
+.env*
+
+# Personal assistant/tooling files that must never be published
+CLAUDE.md
+.claude/
+
+# OS and editor
+.DS_Store
+.idea/
+.vscode/
+*.log
