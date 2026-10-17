@@ -2,10 +2,16 @@
 node_modules/
 dist/
 .wrangler/
+.vercel/
+src/generated/
 
 # Local secrets and environment
 .dev.vars*
 .env*
+!.env.example
+
+# Throwaway experiments
+spike/
 
 # Personal assistant/tooling files that must never be published
 CLAUDE.md
