@@ -62,7 +62,7 @@ Secrets:  OPENROUTER_API_KEY, OWNER_PASSWORD
 | [0003](0003-model-agnostic-openrouter.md) | Model-agnostic via the OpenRouter Image API | Accepted |
 | [0004](0004-image-storage-and-delivery.md) | Store images in R2 behind unguessable URLs; delete after 30 days | Accepted |
 | [0005](0005-inline-display-mcp-apps.md) | Show images inline with an MCP Apps widget | Accepted, pending platform validation |
-| [0006](0006-photo-uploads.md) | Upload photos through the widget | Accepted, pending platform validation |
+| [0006](0006-photo-uploads.md) | Upload photos through the widget, to a pre-assigned id | Accepted; validated on web and iOS |
 | [0007](0007-reference-urls-ssrf.md) | Fetch reference URLs ourselves, behind SSRF checks | Accepted |
 
 To change a decision, add a new ADR that supersedes the old one, and update the old ADR's status. Don't rewrite history.
