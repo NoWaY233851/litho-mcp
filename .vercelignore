@@ -1,0 +1,14 @@
+# Allowlist: upload only what the build needs. Anything else in a working copy
+# stays local. A new top-level build input must be added here, or the deploy
+# will not see it.
+/*
+!api
+!src
+!ui
+!scripts
+!public
+!package.json
+!package-lock.json
+!tsconfig.json
+!vite.config.ts
+!vercel.json
