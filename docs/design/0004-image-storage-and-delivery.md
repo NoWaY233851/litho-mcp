@@ -1,6 +1,6 @@
 # 0004. Store images in R2 behind unguessable URLs; delete after 30 days
 
-- Status: Accepted
+- Status: Superseded by [0010](0010-vercel-blob-storage.md) (2026-10-17)
 - Date: 2026-10-16
 
 ## Context

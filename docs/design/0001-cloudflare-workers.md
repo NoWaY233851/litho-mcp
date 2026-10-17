@@ -1,6 +1,6 @@
 # 0001. Run as one stateless Cloudflare Worker
 
-- Status: Accepted
+- Status: Superseded by [0008](0008-vercel-hobby.md) (2026-10-17)
 - Date: 2026-10-16
 
 ## Context

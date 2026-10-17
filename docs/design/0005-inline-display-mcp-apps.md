@@ -1,6 +1,6 @@
 # 0005. Show images inline with an MCP Apps widget
 
-- Status: Accepted, pending platform validation
+- Status: Accepted. Validated on claude.ai web and iOS on 2026-10-16; desktop and Android are still pending. Revised on 2026-10-17 for Blob-hosted images and host theming.
 - Date: 2026-10-16
 
 ## Context
@@ -48,8 +48,10 @@ Options considered for the in-chat layout:
   - No buttons and no version strip.
 - While a generation is running, it shows "Generating…" and the elapsed seconds. Generation often takes 30–90 seconds.
 - `img.onerror` shows an "expired" note.
-- Full-size images load from `/img/<id>` with `referrerpolicy="no-referrer"`. The CSP lists only the Worker's own origin.
-- Text is in English and Traditional Chinese, chosen from `navigator.language`.
+- Full-size images load from the image's public Blob URL ([0010](0010-vercel-blob-storage.md)) with `referrerpolicy="no-referrer"`. The CSP's `resourceDomains` lists only the Blob store host.
+- Text is in English and Traditional Chinese, chosen from `hostContext.locale`, falling back to `navigator.language`.
+- The widget applies the host's theme, style tokens and fonts (`applyDocumentTheme`, `applyHostStyleVariables`, `applyHostFonts`), and stays readable in dark mode.
+- In fullscreen, content is padded by `hostContext.safeAreaInsets`.
 
 **Platform failures**
 - If validation shows the widget doesn't render on some **mobile** platform, that platform degrades: it shows the tool result's thumbnail (collapsed) and the link in the text. Both are already in the result.
@@ -58,7 +60,7 @@ Options considered for the in-chat layout:
 **Platform validation (before building the real server)**
 A throwaway Worker is deployed and tested on web, desktop, iOS and Android. It checks:
 1. whether the widget renders;
-2. whether `/img` URLs load in `<img>`;
+2. whether full-size image URLs load in `<img>`;
 3. whether fullscreen works;
 4. whether long-press saves the image;
 5. the widget's HTML size;
@@ -66,9 +68,30 @@ A throwaway Worker is deployed and tested on web, desktop, iOS and Android. It c
 
 Results update this ADR.
 
+## Validation (2026-10-16, claude.ai web and iOS)
+
+A throwaway Worker (Phase 0) was tested on claude.ai web (macOS Safari) and the iOS app.
+
+- **Rendering:** the widget renders on both, served by a stateless `createMcpHandler` with the ext-apps `registerAppTool` and `registerAppResource` helpers.
+- **Images:** full-size images load in `<img>` from the server's origin with no CSP violations. `resourceDomains` and `connectDomains` in `_meta.ui.csp` are honored.
+- **Sandbox origin:** without `_meta.ui.domain`, it is `https://<32 hex>.claudemcpcontent.com`.
+- **Fullscreen:** works on both. On iOS, content needs padding by `hostContext.safeAreaInsets` (observed: top 113, bottom 140).
+- **Saving:** long-press saves the image on iOS; right-click works on web.
+- **`downloadFile`:** listed in `hostCapabilities` on web only, not on iOS, so a download button built on it wouldn't work on phones.
+- **Scrolling:** on mobile, inline widgets can't scroll internally; swipes go to the chat. The inline view has to fit without scrolling.
+- **Host context:** it provides `theme`, the `styles.variables` tokens and a per-app `locale` (web reported en-US, iOS zh-TW). The Phase 0 widget ignored them and was unreadable in dark mode, so the widget must use the host's theme tokens and locale.
+- **Protocol version:** claude.ai sent `MCP-Protocol-Version: 2026-07-28`, and `2025-11-25` in one session.
+- **Not yet tested:** desktop, including the first-run Allow prompt, and Android.
+
 ## Consequences
 
 - Images are visible inline without expanding anything. Phones are the most constrained target.
-- Saving or downloading relies on the platform's long-press, or on asking Claude for the link, because there's no download button.
+- Saving or downloading relies on long-press on phones, right-click on web, or asking Claude for the link, because there's no download button.
 - The bundled widget adds a build step: `npm run build:ui` runs before tests and deploys.
-- If the `/img` URL approach fails inside the iframe, a widget-only `get_image_data` tool returning base64 is the fallback.
+- If Blob URLs fail to load inside the iframe, a widget-only `get_image_data` tool returning base64 is the fallback.
+
+## Revision (2026-10-17)
+
+- Full-size images now load from the image's public Blob URL ([0010](0010-vercel-blob-storage.md)) instead of the server's `/img/<id>` route, which no longer exists. The CSP's `resourceDomains` therefore lists the Blob store host. Whether claude.ai accepts the wildcard `https://*.public.blob.vercel-storage.com` or needs the exact store host is verified on the Vercel validation deployment (Phase 0b). `connectDomains` lists the server origin only if the direct-POST upload fallback ([0006](0006-photo-uploads.md)) is used.
+- UI language now comes from `hostContext.locale`, which is set per app, falling back to `navigator.language`.
+- Theme, style tokens, fonts and fullscreen safe-area padding were added after the validation above.

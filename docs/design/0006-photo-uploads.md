@@ -1,6 +1,6 @@
 # 0006. Upload photos through the widget
 
-- Status: Accepted. Revised on 2026-10-16 after platform validation on web and iOS; desktop and Android are still pending.
+- Status: Accepted. Revised on 2026-10-16 after platform validation on web and iOS, and on 2026-10-17 for the move to Vercel; desktop and Android are still pending.
 - Date: 2026-10-16
 
 ## Context
@@ -14,7 +14,7 @@ Options considered:
 
 1. **An upload button inside the MCP Apps widget**:
    - It uses the platform's own photo picker.
-   - The widget can call a widget-only tool, or `POST` directly to the Worker.
+   - The widget can call a widget-only tool, or `POST` directly to the server.
 2. **Relaying the attachment through Claude's code-execution sandbox**:
    - Claude would `POST` the file to a one-time URL.
    - This needs code execution enabled and the domain allowlisted.
@@ -30,11 +30,11 @@ The widget also has to get the new image's id to Claude. The MCP Apps host offer
 
 **The upload flow**
 1. **`upload_image`** (no arguments) pre-assigns the id the photo will get, `up_<32 hex>`, without writing anything.
-   - It returns the id in its text and in `structuredContent: { kind: "upload", id }`.
+   - It returns the id in its text and in `structuredContent: { kind: "upload", id, url }`, where `url` is the public Blob URL the photo will have ([0010](0010-vercel-blob-storage.md)).
    - It opens the widget in upload mode.
    - Because the id is in the tool result from the start, Claude already knows it. Nothing has to be sent back from the widget.
-2. **On mount**, the widget checks whether `/img/<id>` exists:
-   - if it does, it shows the uploaded photo;
+2. **On mount**, the widget probes that URL with an `<img>` load:
+   - if it loads, it shows the uploaded photo, "Uploaded" and "Replace photo";
    - otherwise it shows one "Choose photo" button: `<input type="file" accept="image/png,image/jpeg,image/webp">`.
 
    This lets the widget's state survive page reloads and device switches.
@@ -44,9 +44,10 @@ The widget also has to get the new image's id to Claude. The MCP Apps host offer
    - re-encode it as JPEG at quality 0.9.
 
    This shrinks the upload and **strips EXIF, including GPS location**. The preview comes from that output, not from the file input.
-4. **Transport.** The bytes go to the widget-only tool `upload_image_data({ id, data })`, which reuses the connector's existing session.
+4. **Transport.** The bytes go to the widget-only tool `upload_image_data({ id, data })`, which travels through the connector like any other tool call and needs no separate credential.
    - A direct `POST /upload` with a short-lived token bound to the id also works. It is kept only as a fallback.
-5. **The server** accepts only ids matching `^up_[0-9a-f]{32}$`, applies the same checks as reference URLs ([0007](0007-reference-urls-ssrf.md)), and stores the photo under that id:
+   - That token is a 10-minute HMAC bound to the id. Its key is derived from `CONNECTOR_SECRET` ([0009](0009-connector-secret-header.md)) with a fixed label, so no extra secret is needed.
+5. **The server** accepts only ids matching `^up_[0-9a-f]{32}$`, applies the same checks as reference URLs ([0007](0007-reference-urls-ssrf.md)), and stores the photo at `up/<hex>`:
    - PNG, JPEG or WebP, by magic bytes;
    - at most 10 MiB;
    - at most 8192 px per side.
@@ -81,3 +82,11 @@ The widget also has to get the new image's id to Claude. The MCP Apps host offer
 - Photos never carry location metadata to the server.
 - The upload id appears in the conversation before the photo exists, so Claude may try to edit too early. The `edit_image` error covers this case.
 - An unused pre-assigned id costs nothing, because no object is written until upload.
+
+## Revision (2026-10-17)
+
+- The server-side steps are now worded for any host, after the move to Vercel ([0008](0008-vercel-hobby.md)). Photos are stored in the Blob store at `up/<hex>` ([0010](0010-vercel-blob-storage.md)).
+- The fallback direct-POST token was keyed from the owner password. That password went away with OAuth, so the key is now derived from `CONNECTOR_SECRET` ([0009](0009-connector-secret-header.md)).
+- On mount, the widget probes the upload id's public Blob URL instead of `/img/<id>`, and `upload_image` returns that URL. How the server knows the store's base URL before the first write is verified on the Vercel validation deployment (Phase 0b).
+- Vercel caps non-streamed function bodies at 4.5 MB. That is above the 4 MiB MCP cap, so the MCP cap still sets the ceiling.
+- Whether widget-initiated tool calls carry the connector's request header is confirmed in Phase 0b ([0009](0009-connector-secret-header.md)).

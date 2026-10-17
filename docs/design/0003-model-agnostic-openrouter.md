@@ -92,5 +92,5 @@ Remaining spend is available from `GET /api/v1/key`.
 
 - New OpenRouter image models work without code changes.
 - A model's provider-specific extras stay unavailable.
-- Two catalog calls per hour per isolate. Validation errors cost nothing.
+- Two catalog calls per hour per running server instance; a cold instance fetches the catalog again. Validation errors cost nothing.
 - Parameter support depends on OpenRouter's descriptors being accurate.
