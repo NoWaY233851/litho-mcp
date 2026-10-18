@@ -10,6 +10,24 @@ const cron = (headers: Record<string, string> = {}, init: RequestInit = {}) =>
 
 const bearer = (secret: string) => ({ authorization: `Bearer ${secret}` });
 
+// A well-formed initialize that only the real MCP handler can answer with 200.
+const initialize = (headers: Record<string, string>, url = "https://example.test/mcp") =>
+  new Request(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...headers },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "probe", version: "0" } },
+    }),
+  });
+
+async function expectServedByMcp(response: Response) {
+  expect(response.status).toBe(200);
+  expect(await response.text()).toContain("litho-mcp");
+}
+
 async function snapshot(response: Response) {
   return {
     status: response.status,
@@ -23,14 +41,11 @@ describe("/mcp authentication", () => {
     const deps = fakeDeps();
     expect((await handleRequest(mcp(), deps)).status).toBe(401);
     expect((await handleRequest(mcp(bearer("wrong-secret")), deps)).status).toBe(401);
-    const ok = await handleRequest(mcp(bearer(fullEnv.CONNECTOR_SECRET)), deps);
-    expect(ok.status).toBe(501);
-    expect(await ok.json()).toEqual({ error: "not_implemented" });
+    await expectServedByMcp(await handleRequest(initialize(bearer(fullEnv.CONNECTOR_SECRET)), deps));
   });
 
   it("accepts a bare secret without the Bearer prefix", async () => {
-    const response = await handleRequest(mcp({ authorization: fullEnv.CONNECTOR_SECRET }), fakeDeps());
-    expect(response.status).toBe(501);
+    await expectServedByMcp(await handleRequest(initialize({ authorization: fullEnv.CONNECTOR_SECRET }), fakeDeps()));
   });
 
   it("returns a generic body with no WWW-Authenticate and never echoes the header", async () => {
@@ -81,7 +96,8 @@ describe("/mcp authentication", () => {
       new Request("https://example.test/mcp", { method: "GET", headers: bearer(fullEnv.CONNECTOR_SECRET) }),
       fakeDeps(),
     );
-    expect(authed.status).toBe(501);
+    // The stateless MCP handler rejects GET itself; the point is that it got past the gate.
+    expect(authed.status).toBe(405);
   });
 
   it("does not accept the cron secret on /mcp", async () => {
@@ -163,11 +179,9 @@ describe("/cron/cleanup", () => {
 describe("routing", () => {
   it("routes on the pathname: /mcp?x=1 is /mcp, while /mcp/x, /mcp/ and /api/index are 404", async () => {
     const deps = fakeDeps();
-    const withQuery = await handleRequest(
-      new Request("https://example.test/mcp?x=1", { method: "POST", headers: bearer(fullEnv.CONNECTOR_SECRET) }),
-      deps,
+    await expectServedByMcp(
+      await handleRequest(initialize(bearer(fullEnv.CONNECTOR_SECRET), "https://example.test/mcp?x=1"), deps),
     );
-    expect(withQuery.status).toBe(501);
     for (const path of ["/mcp/x", "/mcp/", "/api/index", "/", "/cron/cleanup/x"]) {
       const response = await handleRequest(
         new Request(`https://example.test${path}`, { headers: bearer(fullEnv.CONNECTOR_SECRET) }),
@@ -198,18 +212,17 @@ describe("routing", () => {
     expect(unknownWithRoute.status).toBe(404);
   });
 
-  it("marks every JSON response no-store", async () => {
+  it("marks every JSON response of its own no-store", async () => {
     const deps = fakeDeps();
     const failing = fakeDeps();
     vi.spyOn(failing.store, "listOlderThan").mockRejectedValue(new Error("x"));
     const responses = [
       await handleRequest(mcp(), deps),
       await handleRequest(new Request("https://example.test/nope"), deps),
-      await handleRequest(mcp(bearer(fullEnv.CONNECTOR_SECRET)), deps),
       await handleRequest(cron(bearer(fullEnv.CRON_SECRET)), deps),
       await handleRequest(cron(bearer(fullEnv.CRON_SECRET)), failing),
     ];
-    expect(responses.map((r) => r.status)).toEqual([401, 404, 501, 200, 500]);
+    expect(responses.map((r) => r.status)).toEqual([401, 404, 200, 500]);
     for (const response of responses) {
       expect(response.headers.get("cache-control")).toBe("no-store");
       expect(response.headers.get("content-type")).toBe("application/json");

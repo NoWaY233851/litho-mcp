@@ -68,7 +68,8 @@ export const UNSUPPORTED_OUTPUT_MESSAGE =
 
 const LIMIT_SOURCES = new Set(["openrouter_credits", "openrouter_key_limit", "openrouter_in_flight_budget"]);
 
-function isLimitError(e: OpenRouterError): boolean {
+/** True for errors that /api/v1/key can explain (spending limits); callers fetch the key only then. */
+export function isLimitError(e: OpenRouterError): boolean {
   if (e.status === 402) return true;
   if (e.status !== 403) return false;
   const m = e.metadata;

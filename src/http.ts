@@ -2,6 +2,7 @@ import { extractSecret, secretMatches } from "./auth/secret.js";
 import { ConfigError } from "./config.js";
 import type { Deps } from "./deps.js";
 import { runCleanup } from "./images/cleanup.js";
+import { mcpFetch } from "./mcp/server.js";
 
 // Responses carry credentials-adjacent state (auth outcomes, cleanup counts),
 // so none of them may be cached by an intermediary.
@@ -13,11 +14,6 @@ function json(status: number, body: unknown): Response {
 }
 
 const notFound = () => json(404, { error: "not_found" });
-
-// Placeholder until the MCP endpoint is wired in.
-async function mcpFetch(_req: Request, _deps: Deps): Promise<Response> {
-  return json(501, { error: "not_implemented" });
-}
 
 async function cleanup(deps: Deps, log: (message: string) => void): Promise<Response> {
   try {
