@@ -1,0 +1,197 @@
+{
+  "data": [
+    {
+      "id": "krea/k3-edit",
+      "name": "Krea: K3 Edit",
+      "description": "Krea K3 Edit is an image-to-image editing model from Krea. It takes one to eight reference images plus a text prompt and returns a single edited image, following instructions that...",
+      "created": 1792103728,
+      "architecture": {
+        "input_modalities": [
+          "text",
+          "image"
+        ],
+        "output_modalities": [
+          "image"
+        ]
+      },
+      "supported_parameters": {
+        "resolution": {
+          "type": "enum",
+          "values": [
+            "1K",
+            "2K"
+          ]
+        },
+        "aspect_ratio": {
+          "type": "enum",
+          "values": [
+            "1:1",
+            "4:3",
+            "3:2",
+            "16:9",
+            "4:5",
+            "2:3",
+            "9:16"
+          ]
+        },
+        "input_references": {
+          "type": "range",
+          "min": 1,
+          "max": 8
+        },
+        "seed": {
+          "type": "boolean"
+        }
+      },
+      "supports_streaming": false,
+      "endpoints": "/api/v1/images/models/krea/k3-edit/endpoints"
+    },
+    {
+      "id": "recraft/recraft-v4.1-flash",
+      "name": "Recraft: Recraft V4.1 Flash",
+      "description": "Recraft V4.1 Flash is a text-to-image model from Recraft, the speed and cost tier of the V4.1 family. It generates ~1K raster images in about 1.5 seconds end to end,...",
+      "created": 1790177946,
+      "architecture": {
+        "input_modalities": [
+          "text"
+        ],
+        "output_modalities": [
+          "image"
+        ]
+      },
+      "supported_parameters": {
+        "aspect_ratio": {
+          "type": "enum",
+          "values": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16",
+            "auto"
+          ]
+        },
+        "n": {
+          "type": "range",
+          "min": 1,
+          "max": 6
+        }
+      },
+      "supports_streaming": false,
+      "endpoints": "/api/v1/images/models/recraft/recraft-v4.1-flash/endpoints"
+    },
+    {
+      "id": "openai/gpt-image-2.5-flare",
+      "name": "OpenAI: GPT Image 2.5 Flare",
+      "description": "GPT Image 2.5 Flare is an image generation and editing model from OpenAI, positioned as the speed-oriented tier of the GPT Image 2.5 series. It is suited to high-volume everyday...",
+      "created": 1788916350,
+      "architecture": {
+        "input_modalities": [
+          "text",
+          "image"
+        ],
+        "output_modalities": [
+          "image"
+        ]
+      },
+      "supported_parameters": {
+        "aspect_ratio": {
+          "type": "enum",
+          "values": [
+            "1:1",
+            "3:2",
+            "2:3",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16",
+            "21:9",
+            "auto"
+          ]
+        },
+        "quality": {
+          "type": "enum",
+          "values": [
+            "auto",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        "background": {
+          "type": "enum",
+          "values": [
+            "auto",
+            "transparent",
+            "opaque"
+          ]
+        },
+        "n": {
+          "type": "range",
+          "min": 1,
+          "max": 10
+        },
+        "input_references": {
+          "type": "range",
+          "min": 0,
+          "max": 16
+        },
+        "output_compression": {
+          "type": "range",
+          "min": 0,
+          "max": 100
+        }
+      },
+      "supports_streaming": true,
+      "endpoints": "/api/v1/images/models/openai/gpt-image-2.5-flare/endpoints"
+    },
+    {
+      "id": "recraft/recraft-v4.1-vector",
+      "name": "Recraft: Recraft V4.1 Vector",
+      "description": "Recraft V4.1 Vector is the vector (SVG) variant of Recraft V4.1, tuned for high aesthetics. It supports text and image inputs and produces SVG image output across multiple aspect ratios,...",
+      "created": 1778707392,
+      "architecture": {
+        "input_modalities": [
+          "text",
+          "image"
+        ],
+        "output_modalities": [
+          "image"
+        ]
+      },
+      "supported_parameters": {
+        "aspect_ratio": {
+          "type": "enum",
+          "values": [
+            "1:1",
+            "4:3",
+            "3:4",
+            "16:9",
+            "9:16",
+            "auto"
+          ]
+        },
+        "output_format": {
+          "type": "enum",
+          "values": [
+            "svg"
+          ]
+        },
+        "n": {
+          "type": "range",
+          "min": 1,
+          "max": 6
+        },
+        "input_references": {
+          "type": "range",
+          "min": 0,
+          "max": 1
+        }
+      },
+      "supports_streaming": false,
+      "endpoints": "/api/v1/images/models/recraft/recraft-v4.1-vector/endpoints"
+    }
+  ]
+}

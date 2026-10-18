@@ -1,0 +1,24 @@
+{
+  "data": [
+    {
+      "id": "krea/k3-edit",
+      "pricing": {
+        "prompt": "0",
+        "completion": "0",
+        "image": "0.02",
+        "image_token": "0.00000718562874251497",
+        "image_output": "0.00000718562874251497"
+      }
+    },
+    {
+      "id": "openai/gpt-image-2.5-flare",
+      "pricing": {
+        "prompt": "0.000008",
+        "completion": "0.000008",
+        "image_output": "0.00003",
+        "web_search": "0.01",
+        "input_cache_read": "0.000002"
+      }
+    }
+  ]
+}
