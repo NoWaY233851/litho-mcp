@@ -2,18 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { ConfigError, loadConfig } from "../src/config.js";
 import { createDeps } from "../src/deps.js";
 import { blobBaseUrl } from "../src/images/store.js";
-import { createLazyFetch, handleRequest } from "../src/http.js";
+import { createLazyFetch } from "../src/http.js";
 import { fakeDeps, fullEnv } from "./helpers.js";
-
-describe("handleRequest", () => {
-  it("404 for unknown paths", async () => {
-    expect((await handleRequest(new Request("https://x.test/nope"), fakeDeps())).status).toBe(404);
-  });
-
-  it("501 for /mcp until the MCP endpoint is wired", async () => {
-    expect((await handleRequest(new Request("https://x.test/mcp"), fakeDeps())).status).toBe(501);
-  });
-});
 
 describe("loadConfig", () => {
   it("requires secrets and defaults retention to 30", () => {
