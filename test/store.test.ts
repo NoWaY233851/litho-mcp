@@ -7,6 +7,7 @@ vi.mock("@vercel/blob", () => ({
 }));
 
 import { del, list, put } from "@vercel/blob";
+import { MAX_STORED_READ_BYTES } from "../src/images/limits.js";
 import type { ImageInfo } from "../src/images/sniff.js";
 import { BLOB_HOST_SUFFIX, blobBaseUrl, createBlobStore, createMemoryStore } from "../src/images/store.js";
 
@@ -49,6 +50,18 @@ describe("memory store", () => {
     expect(got?.info).toEqual(PNG);
     expect(Array.from(got!.bytes)).toEqual(Array.from(PNG_BYTES));
     expect(await store.get(`img_${OTHER_HEX}`)).toBeNull();
+  });
+
+  it("get: refuses an object over 40 MiB instead of returning it", async () => {
+    const store = createMemoryStore();
+    const big = new Uint8Array(MAX_STORED_READ_BYTES + 1);
+    big.set(PNG_BYTES);
+    await store.put(IMG, big, PNG);
+    await expect(store.get(IMG)).rejects.toThrow("stored object too large");
+    const atLimit = new Uint8Array(MAX_STORED_READ_BYTES);
+    atLimit.set(PNG_BYTES);
+    await store.put(UP, atLimit, PNG);
+    expect((await store.get(UP))?.bytes.length).toBe(MAX_STORED_READ_BYTES);
   });
 
   it("idFromUrl inverts url and rejects foreign hosts", () => {
@@ -248,6 +261,56 @@ describe("blob store", () => {
     fetchMock.mockResolvedValueOnce(response(500));
     await expect(store().get(IMG)).rejects.toThrow("blob read failed: HTTP 500");
     expect(cancelled).toEqual(["404", "500"]);
+  });
+
+  it("get: refuses a declared content-length over 40 MiB without reading the body", async () => {
+    let reads = 0;
+    let cancelled = false;
+    const body = new ReadableStream({
+      pull(controller) {
+        reads += 1;
+        controller.enqueue(new Uint8Array(1024));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    fetchMock.mockResolvedValueOnce(
+      new Response(body, { status: 200, headers: { "content-length": String(MAX_STORED_READ_BYTES + 1) } }),
+    );
+    await expect(store().get(IMG)).rejects.toThrow("stored object too large");
+    expect(cancelled).toBe(true);
+    expect(reads).toBeLessThanOrEqual(1);
+  });
+
+  it("get: counts streamed bytes when no length is declared and cancels once over 40 MiB", async () => {
+    const chunk = 8 * 1024 * 1024;
+    let pulls = 0;
+    let cancelled = false;
+    const body = new ReadableStream({
+      pull(controller) {
+        pulls += 1;
+        controller.enqueue(new Uint8Array(chunk));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    fetchMock.mockResolvedValueOnce(new Response(body, { status: 200 }));
+    await expect(store().get(IMG)).rejects.toThrow("stored object too large");
+    expect(cancelled).toBe(true);
+    // Five chunks fit exactly; the sixth crosses the limit. A pull-based stream is not read ahead far.
+    expect(pulls).toBeLessThanOrEqual(8);
+  });
+
+  it("get: a body that lies about a small length is still counted", async () => {
+    const body = new ReadableStream({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(16 * 1024 * 1024));
+      },
+    });
+    fetchMock.mockResolvedValueOnce(new Response(body, { status: 200, headers: { "content-length": "10" } }));
+    await expect(store().get(IMG)).rejects.toThrow("stored object too large");
   });
 
   it("get: an id that is not an image id is null without any request", async () => {

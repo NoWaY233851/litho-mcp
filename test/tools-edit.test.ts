@@ -300,18 +300,81 @@ describe("editImage", () => {
     expect(message).not.toContain("a".repeat(300));
   });
 
-  it("reports the first failing reference in input order: ids before URLs", async () => {
-    const { deps, store, fetchPublic } = setup();
-    await store.put(IMG_A, PNG, PNG_INFO);
-    const slowFail = fetchPublic(async () => {
-      throw new PublicFetchError("http_error");
-    });
+  it("reports the first failing reference in input order, not the fastest: a slow id before a fast URL failure", async () => {
+    const { deps, fetchPublic } = setup();
+    deps.store.get = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      return null;
+    };
     const r = await editImage(
       deps,
-      { prompt: "x", image_ids: [IMG_A, IMG_B], image_urls: ["https://images.example.test/a.png"] },
-      { fetchPublic: slowFail },
+      { prompt: "x", image_ids: [IMG_B], image_urls: ["https://images.example.test/a.png"] },
+      {
+        fetchPublic: fetchPublic(async () => {
+          throw new PublicFetchError("http_error");
+        }),
+      },
     );
     expect(texts(r)).toEqual([`Image ${IMG_B} was not found; it may have expired after the retention period.`]);
+  });
+
+  it("loads each distinct id once, however often it is listed, but every occurrence is sent and counted", async () => {
+    const { or, deps, store } = setup();
+    await store.put(IMG_A, PNG, PNG_INFO);
+    let reads = 0;
+    const get = store.get.bind(store);
+    store.get = async (id) => {
+      reads += 1;
+      return get(id);
+    };
+    const r = await editImage(deps, { prompt: "x", image_ids: Array(16).fill(IMG_A) });
+    expect(r.isError).toBeFalsy();
+    expect(reads).toBe(1);
+    expect(refUrls(or.posts()[0]!.body)).toEqual(Array(16).fill(PNG_DATA_URL));
+  });
+
+  it("counts every repeated occurrence toward the total size cap", async () => {
+    const { or, deps, store } = setup();
+    await store.put(IMG_A, pngOfSize(100, 100, MAX_IMAGE_BYTES), { mime: "image/png", width: 100, height: 100 });
+    const r = await editImage(deps, { prompt: "x", image_ids: Array(5).fill(IMG_A) });
+    expect(r.isError).toBe(true);
+    expect(texts(r)[0]).toMatch(/40 MiB/);
+    expect(or.posts()).toHaveLength(0);
+  });
+
+  it("an own URL and the same id share one read", async () => {
+    const { deps, store } = setup();
+    await store.put(IMG_A, PNG, PNG_INFO);
+    let reads = 0;
+    const get = store.get.bind(store);
+    store.get = async (id) => {
+      reads += 1;
+      return get(id);
+    };
+    await editImage(deps, { prompt: "x", image_ids: [IMG_A], image_urls: [`${BASE}/img/${IMG_A.slice(4)}`] });
+    expect(reads).toBe(1);
+  });
+
+  it("an oversized stored object is reported for that id and OpenRouter is not called", async () => {
+    const { or, deps } = setup();
+    deps.store.get = async () => {
+      throw new Error("stored object too large");
+    };
+    const r = await editImage(deps, { prompt: "x", image_ids: [IMG_A] });
+    expect(r.isError).toBe(true);
+    expect(texts(r)).toEqual([`Image ${IMG_A} is too large to use as a reference.`]);
+    expect(or.posts()).toHaveLength(0);
+
+    const long = await editImage(deps, { prompt: "x", image_urls: [`${BASE}/img/${IMG_A.slice(4)}`] });
+    expect(texts(long)).toEqual([`Image ${IMG_A} is too large to use as a reference.`]);
+  });
+
+  it("a malformed up_ id gets the not-found wording; only a well-formed one is 'not uploaded yet'", async () => {
+    const { deps } = setup();
+    const malformed = await editImage(deps, { prompt: "x", image_ids: ["up_xyz"] });
+    expect(texts(malformed)).toEqual(["Image up_xyz was not found; it may have expired after the retention period."]);
+    const wellFormed = await editImage(deps, { prompt: "x", image_ids: [UP_A] });
+    expect(texts(wellFormed)).toEqual([`Photo ${UP_A} has not been uploaded yet, or it expired.`]);
   });
 
   it("caps the total size of the references and says so before any data URL is built", async () => {

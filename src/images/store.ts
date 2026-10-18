@@ -1,6 +1,7 @@
 // The only module that imports @vercel/blob (docs/design/0008-vercel-hobby.md).
 import { del, list, put } from "@vercel/blob";
 import { parseImageId, type ImageKind } from "./ids.js";
+import { MAX_STORED_READ_BYTES, STORED_TOO_LARGE_MESSAGE as TOO_LARGE } from "./limits.js";
 import { sniffImage, type ImageInfo } from "./sniff.js";
 
 export { BLOB_HOST_SUFFIX, blobBaseUrl } from "./blob-url.js";
@@ -8,7 +9,10 @@ export { BLOB_HOST_SUFFIX, blobBaseUrl } from "./blob-url.js";
 export interface ImageStore {
   /** Returns the public URL. Replaces only `up_` ids; a second put to an `img_` id throws. */
   put(id: string, bytes: Uint8Array, info: ImageInfo): Promise<string>;
-  /** `null` when nothing is stored under `id`, which also covers "does it exist". */
+  /**
+   * `null` when nothing is stored under `id`, which also covers "does it exist". Throws
+   * `Error("stored object too large")` for an object over 40 MiB rather than reading it.
+   */
   get(id: string): Promise<{ bytes: Uint8Array; info: ImageInfo; url: string } | null>;
   /** Derived without I/O, so a URL can be handed out before anything is stored. */
   url(id: string): string;
@@ -29,6 +33,40 @@ const DELETE_BATCH = 1_000;
 const MAX_LIST_PAGES = 50;
 const OWN_PATH = /^\/(img|up)\/([0-9a-f]{32})$/;
 const OBJECT_PATHNAME = /^(img|up)\/([0-9a-f]{32})$/;
+
+/**
+ * Reads a body without ever holding more than MAX_STORED_READ_BYTES: a declared length over the
+ * limit is refused before reading, and the streamed count covers a missing or wrong header.
+ */
+async function readBounded(response: Response): Promise<Uint8Array> {
+  const declared = response.headers.get("content-length");
+  if (declared !== null && /^\d+$/.test(declared) && Number(declared) > MAX_STORED_READ_BYTES) {
+    await response.body?.cancel();
+    throw new Error(TOO_LARGE);
+  }
+  if (!response.body) return new Uint8Array(0);
+  const reader = response.body.getReader();
+  let buffer = new Uint8Array(64 * 1024);
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (total + value.byteLength > MAX_STORED_READ_BYTES) throw new Error(TOO_LARGE);
+      if (total + value.byteLength > buffer.byteLength) {
+        const grown = new Uint8Array(Math.min(Math.max(buffer.byteLength * 2, total + value.byteLength), MAX_STORED_READ_BYTES));
+        grown.set(buffer.subarray(0, total));
+        buffer = grown;
+      }
+      buffer.set(value, total);
+      total += value.byteLength;
+    }
+  } finally {
+    // A no-op after a clean read; on an early exit it closes the connection.
+    reader.cancel().catch(() => {});
+  }
+  return buffer.slice(0, total);
+}
 
 function validId(id: string): { kind: ImageKind; hex: string } {
   const parsed = parseImageId(id);
@@ -122,7 +160,7 @@ export function createBlobStore(
           await response.body?.cancel();
           throw new Error(`blob read failed: HTTP ${response.status}`);
         }
-        const bytes = new Uint8Array(await response.arrayBuffer());
+        const bytes = await readBounded(response);
         const info = sniffImage(bytes);
         if (!info) throw new Error("stored object is not a supported image");
         return { bytes, info, url };
@@ -190,6 +228,7 @@ export function createMemoryStore(
 
     async get(id) {
       const stored = parseImageId(id) ? objects.get(id) : undefined;
+      if (stored && stored.bytes.length > MAX_STORED_READ_BYTES) throw new Error(TOO_LARGE);
       return stored ? { bytes: stored.bytes.slice(), info: stored.info, url: scheme.url(id) } : null;
     },
 

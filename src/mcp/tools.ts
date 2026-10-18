@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { Deps } from "../deps.js";
 import { base64ToBytes, bytesToBase64 } from "../images/base64.js";
 import { newImageId, parseImageId } from "../images/ids.js";
+import { STORED_TOO_LARGE_MESSAGE } from "../images/limits.js";
 import { sniffImage, type ImageInfo } from "../images/sniff.js";
 import { makeThumbnail } from "../images/thumbnail.js";
 import { MAX_IMAGE_BYTES, MAX_IMAGE_SIDE, PublicFetchError, fetchPublicImage } from "../net/public-fetch.js";
@@ -122,21 +123,37 @@ export async function saveAndShow(
   });
 }
 
+/**
+ * What generate_image and edit_image share before they spend anything: which model, which
+ * image parameters, and whether the catalog says the model can take this request. Returns the
+ * error result to hand back, or the validated model and parameters.
+ */
+async function resolveRequest(
+  deps: Deps,
+  args: GenerateArgs,
+  refCount: number,
+  mode: "generate" | "edit",
+): Promise<{ model: ImageModel; params: ImageParams } | CallToolResult> {
+  const modelId = args.model?.trim() || deps.config.defaultModel;
+  const catalog = await loadCatalog(deps);
+  if (!Array.isArray(catalog)) return catalog;
+  const model = catalog.find((m) => m.id === modelId);
+  if (!model) return errorResult(unknownModelMessage(modelId));
+
+  const params: ImageParams = {};
+  for (const name of IMAGE_PARAMS) {
+    const value = args[name];
+    if (value !== undefined) Object.assign(params, { [name]: value });
+  }
+  const problem = validateRequest(model, params, refCount, mode);
+  return problem ? errorResult(problem) : { model, params };
+}
+
 export async function generateImage(deps: Deps, args: GenerateArgs): Promise<CallToolResult> {
   try {
-    const modelId = args.model?.trim() || deps.config.defaultModel;
-    const catalog = await loadCatalog(deps);
-    if (!Array.isArray(catalog)) return catalog;
-    const model = catalog.find((m) => m.id === modelId);
-    if (!model) return errorResult(unknownModelMessage(modelId));
-
-    const params: ImageParams = {};
-    for (const name of IMAGE_PARAMS) {
-      const value = args[name];
-      if (value !== undefined) Object.assign(params, { [name]: value });
-    }
-    const problem = validateRequest(model, params, 0, "generate");
-    if (problem) return errorResult(problem);
+    const resolved = await resolveRequest(deps, args, 0, "generate");
+    if ("content" in resolved) return resolved;
+    const { model, params } = resolved;
 
     let created: CreatedImage;
     try {
@@ -223,8 +240,10 @@ export interface EditOptions {
 type Reference = { kind: "id"; id: string } | { kind: "url"; url: string };
 type Loaded = { ok: true; bytes: Uint8Array; info: ImageInfo } | { ok: false; message: string };
 
+// Only a well-formed up_ id can have been handed out by upload_image, so only it gets the
+// "not uploaded yet" wording.
 const notFoundMessage = (id: string): string =>
-  id.startsWith("up_")
+  parseImageId(id)?.kind === "up"
     ? `Photo ${echo(id)} has not been uploaded yet, or it expired.`
     : `Image ${echo(id)} was not found; it may have expired after the retention period.`;
 
@@ -250,7 +269,15 @@ async function loadReference(
   fetchPublic: typeof fetchPublicImage,
 ): Promise<Loaded> {
   if (ref.kind === "id") {
-    const stored = await deps.store.get(ref.id);
+    let stored;
+    try {
+      stored = await deps.store.get(ref.id);
+    } catch (e) {
+      if (e instanceof Error && e.message === STORED_TOO_LARGE_MESSAGE) {
+        return { ok: false, message: `Image ${echo(ref.id)} is too large to use as a reference.` };
+      }
+      throw e;
+    }
     return stored ? { ok: true, bytes: stored.bytes, info: stored.info } : { ok: false, message: notFoundMessage(ref.id) };
   }
   try {
@@ -280,28 +307,32 @@ export async function editImage(deps: Deps, args: EditArgs, options: EditOptions
       return errorResult("edit_image needs at least one reference image: pass image_ids or image_urls.");
     }
 
-    const modelId = args.model?.trim() || deps.config.defaultModel;
-    const catalog = await loadCatalog(deps);
-    if (!Array.isArray(catalog)) return catalog;
-    const model = catalog.find((m) => m.id === modelId);
-    if (!model) return errorResult(unknownModelMessage(modelId));
+    const resolved = await resolveRequest(deps, args, refs.length, "edit");
+    if ("content" in resolved) return resolved;
+    const { model, params } = resolved;
 
-    const params: ImageParams = {};
-    for (const name of IMAGE_PARAMS) {
-      const value = args[name];
-      if (value !== undefined) Object.assign(params, { [name]: value });
-    }
-    const problem = validateRequest(model, params, refs.length, "edit");
-    if (problem) return errorResult(problem);
-
-    // allSettled so the failure reported is the first in input order, not the fastest.
+    // Each distinct reference is loaded once, however often it is listed, so repeating one
+    // large id cannot multiply what is held in memory. Every occurrence still counts toward
+    // the total below because each one is sent to OpenRouter. allSettled so the failure
+    // reported is the first in input order, not the fastest.
     const fetchPublic = options.fetchPublic ?? fetchPublicImage;
-    const settled = await Promise.allSettled(refs.map((ref) => loadReference(deps, ref, fetchPublic)));
+    const pending = new Map<string, Promise<Loaded>>();
+    const settled = await Promise.allSettled(
+      refs.map((ref) => {
+        const key = ref.kind === "id" ? `id:${ref.id}` : `url:${ref.url}`;
+        let load = pending.get(key);
+        if (!load) {
+          load = loadReference(deps, ref, fetchPublic);
+          pending.set(key, load);
+        }
+        return load;
+      }),
+    );
     const loaded: { bytes: Uint8Array; info: ImageInfo }[] = [];
     for (const outcome of settled) {
       if (outcome.status === "rejected") throw outcome.reason;
       if (!outcome.value.ok) return errorResult(outcome.value.message);
-      loaded.push(outcome.value);
+      loaded.push({ bytes: outcome.value.bytes, info: outcome.value.info });
     }
 
     const total = loaded.reduce((sum, r) => sum + r.bytes.length, 0);
@@ -311,8 +342,16 @@ export async function editImage(deps: Deps, args: EditArgs, options: EditOptions
       );
     }
     // Only data URLs the server built from sniffed bytes leave this process; a caller's URL is
-    // never forwarded to OpenRouter.
-    const references = loaded.map((r) => `data:${r.info.mime};base64,${bytesToBase64(r.bytes)}`);
+    // never forwarded to OpenRouter. A repeated reference shares one encoded string.
+    const encoded = new Map<Uint8Array, string>();
+    const references = loaded.map((r) => {
+      let dataUrl = encoded.get(r.bytes);
+      if (dataUrl === undefined) {
+        dataUrl = `data:${r.info.mime};base64,${bytesToBase64(r.bytes)}`;
+        encoded.set(r.bytes, dataUrl);
+      }
+      return dataUrl;
+    });
 
     let created: CreatedImage;
     try {

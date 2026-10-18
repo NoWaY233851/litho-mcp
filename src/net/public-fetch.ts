@@ -13,10 +13,12 @@
 import { promises as dns } from "node:dns";
 import type { LookupFunction } from "node:net";
 import { Agent, fetch as undiciFetch } from "undici";
+import { MAX_IMAGE_BYTES } from "../images/limits.js";
 import { sniffImage, type ImageInfo } from "../images/sniff.js";
 import { isIpLiteral, isPublicIp } from "./ip.js";
 
-export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+// Defined in a leaf module so the store can share the limit without importing this one.
+export { MAX_IMAGE_BYTES };
 export const MAX_IMAGE_SIDE = 8192;
 const MAX_REDIRECTS = 3;
 const FETCH_TIMEOUT_MS = 15_000;
