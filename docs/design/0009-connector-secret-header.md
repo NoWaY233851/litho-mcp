@@ -1,6 +1,6 @@
 # 0009. Authenticate with a connector secret in a request header
 
-- Status: Accepted. Supersedes [0002](0002-single-user-owner-password-oauth.md).
+- Status: Accepted. Supersedes [0002](0002-single-user-owner-password-oauth.md). Validated on web, desktop and iOS on 2026-10-17.
 - Date: 2026-10-17
 
 ## Context
@@ -17,9 +17,9 @@ The server spends the deployer's OpenRouter credit, so `/mcp` must not be open. 
 - Anthropic recommends header authentication for a fixed credential.
 - Requests come from Anthropic's backend, from the stable outbound range `160.79.104.0/21`. That range is shared by every Anthropic user. Widget-initiated tool calls are proxied through the same backend.
 
-**Not documented**
-- Whether widget-initiated `tools/call` and `resources/read` requests carry the headers. They are expected to, since the host proxies them.
-- How claude.ai reacts to a 401 or 403 from a "No sign-in" connector. A 401 might start OAuth discovery.
+**Not documented (measured on 2026-10-17, see Validation)**
+- Whether widget-initiated `tools/call` and `resources/read` requests carry the headers.
+- How claude.ai reacts to a 401 or 403 from a "No sign-in" connector.
 
 **Why OAuth ([0002](0002-single-user-owner-password-oauth.md)) was dropped**
 - 0002 relied on `@cloudflare/workers-oauth-provider` and KV. On Vercel ([0008](0008-vercel-hobby.md)) the server would need its own authorization server (metadata, client registration, an authorize page, token issuing and refresh rotation) plus a token store such as Redis. That is another vendor, another quota and much more code.
@@ -43,8 +43,8 @@ The server spends the deployer's OpenRouter credit, so `/mcp` must not be open. 
 - Headers are never logged. The secret never appears in URLs, logs, tool results or the repo.
 
 **Rejected requests**
-- A missing or wrong secret gets an error with no detail.
-- Whether that error is `401` without `WWW-Authenticate`, or `403`, is decided by how claude.ai behaves under "No sign-in" on the Vercel validation deployment (Phase 0b).
+- A missing or wrong secret gets `401` with no `WWW-Authenticate` header and a generic JSON body with no detail.
+- 401 is chosen over 403 because it gives a smoother first-time setup (see Validation).
 
 **Rotation**
 - Set a new `CONNECTOR_SECRET` and redeploy.
@@ -71,6 +71,15 @@ The server spends the deployer's OpenRouter credit, so `/mcp` must not be open. 
   - rotating the secret ends their access.
 - There is no second factor, the same trade-off as 0002's owner password. A 256-bit secret can't be guessed online.
 - Rejected requests still count as function invocations, so a flood could use up the Hobby allowance and pause the service ([0008](0008-vercel-hobby.md)). This affects availability only.
-- **To confirm in Phase 0b:**
-  - the header reaches the server on model-initiated `tools/call`, widget-initiated `tools/call` and `resources/read` (logging presence only, never values);
-  - claude.ai's reaction to `401` versus `403` for a missing or wrong secret.
+- When a connector is added, claude.ai first sends an `initialize` probe without the configured headers, so a server that enforces the secret always rejects it. The server must tolerate that rejection, and the add flow must not depend on the probe succeeding.
+
+## Validation (2026-10-17, Vercel)
+
+Tested on claude.ai web (macOS Safari), Claude desktop (macOS) and the Claude iOS app (iOS 18.7).
+
+- **Header delivery:** the `Authorization: Bearer <secret>` header reached the server on model-initiated `tools/call`, widget-initiated `tools/call` and `resources/read`, on all three platforms. claude.ai sends the value exactly as entered, including the `Bearer ` prefix the user typed.
+- **Add-time probe:** when a connector is added, claude.ai first sends an `initialize` (2025-11-25) that carries none of the configured headers, so an enforcing server always rejects it.
+- **Response `401` without `WWW-Authenticate`:** after the rejected probe, claude.ai looks for OAuth metadata (`GET /.well-known/oauth-protected-resource/mcp`, `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`). All returned 404, served statically in production, so they cost no function invocation. The add then completes directly with "No sign-in" and the header, and a connector with the correct secret works normally.
+- **Response `403`:** no OAuth lookup, but the add dialog shows "Couldn't check the server - Couldn't determine how this server signs in" and requires "Continue anyway". After that, a correct secret works.
+- **Wrong or missing secret, either status:** claude.ai shows "Connection issue" messages, including one saying the connector was set up as not requiring sign-in but the server asked for sign-in (status 401 or 403), and retries `initialize` before giving up. A misconfigured connector is therefore visible to the user.
+- **Decision:** `401` with no `WWW-Authenticate` and a generic JSON body.

@@ -1,6 +1,6 @@
 # 0006. Upload photos through the widget
 
-- Status: Accepted. Revised on 2026-10-16 after platform validation on web and iOS, and on 2026-10-17 for the move to Vercel; desktop and Android are still pending.
+- Status: Accepted. Revised on 2026-10-16 after platform validation on web and iOS, and on 2026-10-17 for the move to Vercel. Validated on web, desktop and iOS; Android is untested.
 - Date: 2026-10-16
 
 ## Context
@@ -35,7 +35,9 @@ The widget also has to get the new image's id to Claude. The MCP Apps host offer
    - Because the id is in the tool result from the start, Claude already knows it. Nothing has to be sent back from the widget.
 2. **On mount**, the widget probes that URL with an `<img>` load:
    - if it loads, it shows the uploaded photo, "Uploaded" and "Replace photo";
-   - otherwise it shows one "Choose photo" button: `<input type="file" accept="image/png,image/jpeg,image/webp">`.
+   - otherwise it shows one "Choose photo" button: `<input type="file" accept="image/png,image/jpeg,image/webp">`. The native input stays hidden behind the widget's own button, and only the widget's preview is shown.
+
+   The probe adds a cache-busting query to the URL, because the upload object is cached for only a short time ([0010](0010-vercel-blob-storage.md)).
 
    This lets the widget's state survive page reloads and device switches.
 3. **In the browser**:
@@ -43,8 +45,8 @@ The widget also has to get the new image's id to Claude. The MCP Apps host offer
    - scale it to at most 2048 px on the long edge;
    - re-encode it as JPEG at quality 0.9.
 
-   This shrinks the upload and **strips EXIF, including GPS location**. The preview comes from that output, not from the file input.
-4. **Transport.** The bytes go to the widget-only tool `upload_image_data({ id, data })`, which travels through the connector like any other tool call and needs no separate credential.
+   This shrinks the upload and **strips EXIF, including GPS location**. The preview comes from that output, not from the file input. If the browser can't decode the file, the widget says so and suggests JPEG, PNG or WebP.
+4. **Transport.** The bytes go to the widget-only tool `upload_image_data({ id, data })`, which travels through the connector like any other tool call and needs no separate credential. This was confirmed on Vercel.
    - A direct `POST /upload` with a short-lived token bound to the id also works. It is kept only as a fallback.
    - That token is a 10-minute HMAC bound to the id. Its key is derived from `CONNECTOR_SECRET` ([0009](0009-connector-secret-header.md)) with a fixed label, so no extra secret is needed.
 5. **The server** accepts only ids matching `^up_[0-9a-f]{32}$`, applies the same checks as reference URLs ([0007](0007-reference-urls-ssrf.md)), and stores the photo at `up/<hex>`:
@@ -74,7 +76,18 @@ The widget also has to get the new image's id to Claude. The MCP Apps host offer
   - handles 48 MP photos (6048×8064), which scale to about 0.6–1.2 MB of JPEG.
   - The file input's own thumbnail rendered black for such a photo, which is why the preview comes from the re-encoded output.
 - **`ui/update-model-context`:** its contents disappeared after a page reload.
-- **Not yet tested:** desktop and Android, including the Android WebView file picker.
+- **Not tested then:** desktop and Android. Desktop was covered on 2026-10-17 (below).
+
+## Validation (2026-10-17, Vercel)
+
+Tested on claude.ai web (macOS Safari), Claude desktop (macOS) and the Claude iOS app against a throwaway Vercel deployment.
+
+- **Transport (decision confirmed):** `upload_image_data({ id, data })` carried 1 MB and 3 MB base64 arguments through Vercel on web (695 / 1,170 ms), desktop (726 / 1,344 ms) and iOS (736 / 1,336 ms). Both are below the SDK's 4 MiB cap and Vercel's 4.5 MB body cap. The direct-POST fallback is not needed.
+- **Real photos:** a 40 MB PNG (web), a 48 MP iPhone photo and a ProRAW DNG (iOS) and a JPEG (desktop) were each scaled to at most 2048 px and re-encoded as JPEG at 0.9, giving 0.1-1.2 MB.
+- **State across reloads:** after a page reload, the widget's mount probe found the uploaded photo.
+- **Undecodable formats:** iOS converts HEIC to JPEG when picked and decodes ProRAW DNG. The desktop app (Chromium) can't decode DNG ("The source image could not be decoded") and probably not HEIC, and its file dialog offered the DNG despite the `accept` list. The widget therefore reports undecodable formats clearly and suggests JPEG, PNG or WebP.
+- **Native file input:** on iOS its own thumbnail is black for some photos while the widget's canvas preview is correct, so the widget hides the native input behind its own button.
+- **Android:** not tested (no device), including the Android WebView file picker.
 
 ## Consequences
 
@@ -87,6 +100,7 @@ The widget also has to get the new image's id to Claude. The MCP Apps host offer
 
 - The server-side steps are now worded for any host, after the move to Vercel ([0008](0008-vercel-hobby.md)). Photos are stored in the Blob store at `up/<hex>` ([0010](0010-vercel-blob-storage.md)).
 - The fallback direct-POST token was keyed from the owner password. That password went away with OAuth, so the key is now derived from `CONNECTOR_SECRET` ([0009](0009-connector-secret-header.md)).
-- On mount, the widget probes the upload id's public Blob URL instead of `/img/<id>`, and `upload_image` returns that URL. How the server knows the store's base URL before the first write is verified on the Vercel validation deployment (Phase 0b).
+- On mount, the widget probes the upload id's public Blob URL instead of `/img/<id>`, and `upload_image` returns that URL. The server builds the URL from the store id taken from its Blob credentials, as described in [0010](0010-vercel-blob-storage.md), so it knows the URL before the first write. Host names compare case-insensitively.
 - Vercel caps non-streamed function bodies at 4.5 MB. That is above the 4 MiB MCP cap, so the MCP cap still sets the ceiling.
-- Whether widget-initiated tool calls carry the connector's request header is confirmed in Phase 0b ([0009](0009-connector-secret-header.md)).
+- Widget-initiated tool calls carry the connector's request header ([0009](0009-connector-secret-header.md)).
+- Photos are stored with a 60-second cache lifetime and the widget adds a cache-busting query when it shows or probes them. An edit started within about 60 seconds of replacing a photo may still read the previous photo. This is accepted ([0010](0010-vercel-blob-storage.md)).

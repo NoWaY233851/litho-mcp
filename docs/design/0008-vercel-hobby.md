@@ -1,6 +1,6 @@
 # 0008. Host on Vercel Hobby as one Node function
 
-- Status: Accepted. Supersedes [0001](0001-cloudflare-workers.md).
+- Status: Accepted. Supersedes [0001](0001-cloudflare-workers.md). Validated on a Vercel deployment on 2026-10-17.
 - Date: 2026-10-17
 
 ## Context
@@ -43,8 +43,9 @@ The connector requirements behind [0001](0001-cloudflare-workers.md) still hold:
 **One function**
 - One Vercel project on the Hobby plan, with one Node.js function, `api/index.ts`, on Fluid compute.
 - `vercel.json` sets `maxDuration: 300` for it, rewrites `/mcp` and `/cron/cleanup` (and `/upload`, only if the upload fallback in [0006](0006-photo-uploads.md) is used) to it, and declares the daily cleanup cron ([0010](0010-vercel-blob-storage.md)).
-- The function exports a Web-standard `fetch` handler.
-- MCP uses the SDK's own `createMcpHandler`, stateless, with ext-apps for the widget. It accepts 2025-era clients (`initialize` with 2025-06-18 or 2025-11-25) and current ones.
+- The function exports a Web-standard `fetch` handler (`export default { fetch }`). It routes on the request's pathname, which keeps the original path (`/mcp`) after a `vercel.json` rewrite.
+- **No keep-alive.** Long tool calls need no progress notifications or keep-alives (see Validation).
+- MCP uses the SDK's own `createMcpHandler`, stateless, with ext-apps for the widget. It accepts 2025-era clients (`initialize` with 2025-06-18 or 2025-11-25) and current ones. Legacy support is required, not optional: the iOS app's widget-initiated calls and `resources/read` use 2025-11-25.
 - No `agents`, no `@cloudflare/workers-oauth-provider`, no extra MCP adapter package.
 - No database and no session state.
 
@@ -62,6 +63,12 @@ The connector requirements behind [0001](0001-cloudflare-workers.md) still hold:
 - Only the production alias is registered as the connector, never a per-deployment URL.
 - `.vercel/` holds the project and org ids, so it is gitignored.
 
+**Build and static files**
+- The build is a `vercel-build` script only, with no `build` script. It generates the widget and other build outputs before the function is bundled.
+- `public/` must exist and be non-empty (a `robots.txt` is enough). Without it, Vercel's builder would serve uploaded files outside `api/` as static files.
+- An allowlist `.vercelignore` uploads only the build inputs and `public/`.
+- Together, these mean only `public/` is served statically. Sources, `package.json`, `vercel.json` and generated files return 404.
+
 ## Consequences
 
 - Infrastructure costs $0 with a hard stop. The price is availability: exceeding a Hobby limit pauses the service for up to 30 days. Personal use is expected to stay far below the limits. The README says what happens on overrun.
@@ -70,8 +77,18 @@ The connector requirements behind [0001](0001-cloudflare-workers.md) still hold:
 - The 4.5 MB body cap sits above the SDK's 4 MiB MCP body cap, so uploads stay bound by the MCP cap.
 - Commercial use of a deployment needs a paid Vercel plan.
 - Vendor coupling is limited to three adapters. Moving back to Cloudflare would still mean Workers Paid, given the CPU measured above.
-- **To verify on a throwaway Vercel deployment (Phase 0b) before building:**
-  - A tool call that waits silently for about 200 s completes through claude.ai. No idle timeout separate from the maximum duration is documented. If the call is cut off, the server sends MCP progress notifications or keep-alives while it waits.
-  - sharp loads in a plain (non-Next.js) Function, plus the size, time and memory of a 1024 px WebP thumbnail. The fallback is in [0010](0010-vercel-blob-storage.md).
-  - The production alias is reachable with no protection wall.
-  - Active CPU per generate-like request, read from Vercel's observability, to confirm the headroom.
+- Per-deployment URLs answer 302 to Vercel's login under Standard Protection, so only the production alias works as a connector URL.
+- A rejected or unauthenticated request still invokes the function, which counts against the Hobby allowance.
+
+## Validation (2026-10-17, Vercel)
+
+Tested with throwaway deployments on Node 24 (linux x64), from claude.ai web (macOS Safari), Claude desktop (macOS) and the Claude iOS app (iOS 18.7).
+
+- **Build:** a plain `api/index.ts` exporting `{ fetch }`, built with a `vercel-build` script and no `build` script, deployed and ran. Relative `.js` imports of build-generated `.ts` modules resolved.
+- **Routing:** after a `vercel.json` rewrite (`/mcp` to `/api/index`), `request.url` keeps the original pathname, and query parameters added by the rewrite destination also arrive. Routing on the pathname works.
+- **Static exposure:** with a non-empty `public/` and the allowlist `.vercelignore`, only `public/` was served. `/package.json`, `/vercel.json`, `/tsconfig.json`, sources and generated files returned 404, and `/api/index.ts` reached the function rather than returning source. That static serving happens without `public/` is inferred from the builder's source, not tested.
+- **Production alias:** publicly reachable with no protection wall.
+- **Long calls (decision: no keep-alive):** a tool call that waited 200 s with no bytes on the wire (protocol 2026-07-28, plain JSON response) completed on web and on iOS. claude.ai sends no `progressToken` on model-initiated tool calls, so progress notifications wouldn't be available anyway. Logging notifications would be.
+- **Protocol versions:** model-initiated calls use 2026-07-28 (`server/discover`, no `initialize`) on every platform. The iOS app's widget-initiated calls and `resources/read` use 2025-11-25.
+- **CPU:** a generate-like request (fetch and `res.json()` of a ~6 MB OpenRouter-shaped body, base64-decode of a 4.5 MB PNG, Blob `put`, 1024 px WebP thumbnail) took 515-601 ms of process CPU, 0.75-0.88 s wall and about 197 MB peak RSS over three warm runs. `JSON.parse` of the body is about 200-265 ms of that and the thumbnail about 175-212 ms. Hobby's 4 Active CPU-hours a month cover roughly 20,000 such requests.
+- **sharp:** version 0.35.5 (libvips 8.18.7) loads in a plain Vercel Function. See [0010](0010-vercel-blob-storage.md) for the thumbnail results.
