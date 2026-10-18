@@ -1,6 +1,6 @@
 # litho-mcp
 
-litho-mcp is a remote [MCP](https://modelcontextprotocol.io) server that runs on Vercel as a single Node.js function. Add it to claude.ai as a custom connector and Claude can generate and edit images through [OpenRouter](https://openrouter.ai) during a conversation. Results appear inline in the chat. It has been validated on claude.ai web, Claude desktop and the Claude iOS app.
+litho-mcp is a remote [MCP](https://modelcontextprotocol.io) server that runs on Vercel as a single Node.js function. Add it to claude.ai as a custom connector and Claude can generate and edit images through [OpenRouter](https://openrouter.ai) during a conversation. Results appear inline in the chat. Its design was validated on claude.ai web, Claude desktop and the Claude iOS app.
 
 Each deployment serves one person: the one who deployed it. There is no database and no sign-in flow. The connector authenticates with a shared secret sent as a request header.
 
@@ -17,7 +17,7 @@ The design, the alternatives that were rejected and the reasons are recorded in 
 
 - A claude.ai account that has the **Request headers** option for custom connectors. This feature is in beta with limited availability. Without it litho-mcp cannot authenticate, so it cannot be used (see [ADR 0009](docs/design/0009-connector-secret-header.md)).
 - A Vercel account on the Hobby plan.
-- An [OpenRouter](https://openrouter.ai) API key with a **spending limit** set. The server never caps model spending itself, so the limit on the key is what bounds your cost.
+- An [OpenRouter](https://openrouter.ai) API key with a **spending limit** set: create the key in the OpenRouter dashboard and give it a credit limit. The server never caps model spending itself, so the limit on the key is what bounds your cost.
 - Node.js 22.19 or newer on the machine you deploy from.
 
 ## Deploy
@@ -43,7 +43,14 @@ All commands run from a clone of this repository. Check flags against `npx verce
 
    With `--yes` the store is connected to Production, Preview and Development, and the CLI sets `BLOB_READ_WRITE_TOKEN` in all three as a plain (Config) variable. It does not set `BLOB_STORE_ID`. That is fine: the server derives the store id from the token.
 
-   The token can write and delete every image, so it should be a Secret (write-only) variable instead. Vercel does not convert a saved variable in place, and variables created by an integration cannot be switched to Secret from the variables list. The documented route is: disconnect the store from the project, rotate its token, reconnect it with Development deselected and Sensitive enabled, then redeploy. This route follows Vercel's documentation and has not yet been verified end to end. The tested path is the plain variable above, which works.
+   The token can write and delete every image, so the recommended setup is to store it as a Secret (write-only) variable (see [ADR 0010](docs/design/0010-vercel-blob-storage.md)). Vercel does not convert a saved variable in place, and variables created by an integration cannot be switched to Secret from the variables list. The documented route is:
+
+   1. Disconnect the store from the project in the Vercel dashboard.
+   2. Rotate the store's read-write token, so the value that was readable as a plain variable no longer works.
+   3. Reconnect the store to the project with Development deselected and Sensitive enabled.
+   4. Redeploy.
+
+   This route follows Vercel's documentation and has not yet been verified end to end. The acceptable fallback is to keep the plain variable the CLI created, which is the tested path and works. Its cost is that the token stays readable in the dashboard and through `npx vercel env pull`.
 
    `BLOB_STORE_ID` is optional. When set, it takes precedence over the id inside the token when building the public image base URL. Connecting a store from the dashboard is documented to add `BLOB_STORE_ID` and an OIDC token; that path has not been tested.
 
@@ -54,14 +61,14 @@ All commands run from a clone of this repository. Check flags against `npx verce
    CRON_SECRET=$(openssl rand -base64 32)
    ```
 
-   Keep the `CONNECTOR_SECRET` value for step 4 of the next section. It cannot be read back from Vercel once stored as a Secret.
+   Save the `CONNECTOR_SECRET` value in a password manager now (on macOS, `printf %s "$CONNECTOR_SECRET" | pbcopy` copies it). It cannot be read back from Vercel once stored as a Secret, and you need it again for the connector header. Keep this shell session open until the next step is done, or use the saved value.
 
-4. Add the variables from [.env.example](.env.example). Pass secrets on stdin, never with `--value`, so they stay out of shell history:
+4. Add the variables from [.env.example](.env.example). The app secrets go to **production only**: a single-user deployment does not need them in Preview or Development, and copying them there widens exposure. Preview deployments then answer `500` with `server_misconfigured`, which is expected. Local runs read `.env.local`, filled in per `.env.example`; it is gitignored and never uploaded. Pass secrets on stdin, never with `--value`, so they stay out of shell history:
 
    ```
-   printf %s "$CONNECTOR_SECRET" | npx vercel env add CONNECTOR_SECRET production,preview,development --sensitive
-   printf %s "$CRON_SECRET" | npx vercel env add CRON_SECRET production,preview,development --sensitive
-   npx vercel env add OPENROUTER_API_KEY production,preview,development --sensitive
+   printf %s "$CONNECTOR_SECRET" | npx vercel env add CONNECTOR_SECRET production --sensitive
+   printf %s "$CRON_SECRET" | npx vercel env add CRON_SECRET production --sensitive
+   npx vercel env add OPENROUTER_API_KEY production --sensitive
    ```
 
    The last command prompts for the key. Optional plain variables:
@@ -90,6 +97,8 @@ All commands run from a clone of this repository. Check flags against `npx verce
    npx vercel --prod
    ```
 
+   Use the production URL this command prints in the steps below. It may differ from the project name; `<project>.vercel.app` stands for it in this document.
+
 6. Check that the endpoint rejects unauthenticated requests:
 
    ```
@@ -104,7 +113,7 @@ All commands run from a clone of this repository. Check flags against `npx verce
 2. URL: `https://<project>.vercel.app/mcp`.
 3. Authentication: **No sign-in** (no OAuth).
 4. Request header: name `Authorization`, value `Bearer <CONNECTOR_SECRET>`.
-5. Add it on claude.ai web or the desktop app first.
+5. Add it on claude.ai web or the desktop app first; the dialog with request headers is easiest to use there. Do not screenshot or share the dialog while it shows the header value.
 
 The add completes directly, with no "Continue anyway" step. While adding, claude.ai sends an `initialize` request without headers and gets `401`, and it looks up OAuth metadata under `/.well-known/` and gets Vercel's static `404`. Both are expected. In Vercel's request log the first shows only as a `401`; the server logs nothing about it.
 
@@ -112,20 +121,27 @@ If claude.ai reports a "Connection issue" saying the server asked for sign-in (s
 
 ## Rotate the secret
 
-1. Generate a new value and replace the variable:
+1. Generate a new value and save it in a password manager:
 
    ```
-   printf %s "$CONNECTOR_SECRET" | npx vercel env add CONNECTOR_SECRET production,preview,development --sensitive --force
+   CONNECTOR_SECRET=$(openssl rand -base64 32)
+   printf %s "$CONNECTOR_SECRET" | pbcopy
    ```
 
-2. Redeploy with `npx vercel --prod`.
-3. Remove the connector in claude.ai and add it again with the new header value. The headers of an existing connector cannot be edited.
+2. Replace the variable. Do not run this with an empty `CONNECTOR_SECRET`; the server would refuse to serve.
 
-Rotate `CRON_SECRET` the same way; no claude.ai step is needed. To rotate `OPENROUTER_API_KEY`, create a new key at OpenRouter, replace the variable and redeploy.
+   ```
+   printf %s "$CONNECTOR_SECRET" | npx vercel env add CONNECTOR_SECRET production --sensitive --force
+   ```
+
+3. Redeploy with `npx vercel --prod`. The old connector fails at once.
+4. Remove the connector in claude.ai and add it again with the new header value. The headers of an existing connector cannot be edited.
+
+`env add --force` replaces any variable, so `CRON_SECRET` and `OPENROUTER_API_KEY` rotate the same way (create the new OpenRouter key in its dashboard first). Rotating `CRON_SECRET` needs no connector change.
 
 ## Retention
 
-Images are deleted `RETENTION_DAYS` days after creation (default 30). Cleanup is a Vercel Cron job that runs once a day at 03:00 UTC (`vercel.json`), so an image can outlive the setting by up to about a day. Changing `RETENTION_DAYS` takes effect after a redeploy.
+Images are deleted `RETENTION_DAYS` days after creation (default 30). Cleanup is a Vercel Cron job that runs once a day, around 03:00 UTC (`vercel.json`; Hobby cron timing is only precise to the hour), so an image can outlive the setting by up to about a day. Changing `RETENTION_DAYS` takes effect after a redeploy.
 
 ## Limits
 
@@ -166,6 +182,8 @@ Host-specific code stays behind small adapters so the core can move hosts. Only 
 - Android is untested.
 
 ## Remove a deployment
+
+Run the `vercel blob` commands from the linked clone. After `npx vercel link`, `.env.local` holds `VERCEL_OIDC_TOKEN` without `BLOB_STORE_ID`, and these commands fail until you remove the `VERCEL_OIDC_TOKEN` line or pass the matching flags (`--rw-token`, or `--oidc-token` with `--store-id`); see [Development](#development).
 
 1. Empty the linked project's store: `npx vercel blob empty-store`.
 2. Find the store id with `npx vercel blob list-stores --all` (it looks like `store_...`), then delete the store with `npx vercel blob delete-store <store id>`. This command has no `--yes` and refuses a store that is not empty.
