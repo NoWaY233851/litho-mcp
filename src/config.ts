@@ -1,3 +1,5 @@
+import { BLOB_HOST_SUFFIX, blobBaseUrl } from "./images/blob-url.js";
+
 // Every configuration failure is a ConfigError. Its message names the offending
 // variable and never a value, so it is the only kind of error the server logs
 // verbatim while building its dependencies.
@@ -51,7 +53,18 @@ function retentionDays(raw: string | undefined): number {
   return days;
 }
 
-const DNS_LABEL = /^[a-z0-9-]{1,63}$/;
+// Letters and digits with inner hyphens only. Anything the URL parser would
+// rewrite or reject (such as an "xn--" label with invalid punycode) fails the
+// round-trip check below.
+const DNS_LABEL = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
+
+function isStoreHost(id: string): boolean {
+  try {
+    return new URL(blobBaseUrl(id)).hostname === `${id}${BLOB_HOST_SUFFIX}`;
+  } catch {
+    return false;
+  }
+}
 
 // The store id becomes part of every public URL, so it must be a single DNS
 // label: anything else could change the host the server vouches for.
@@ -64,7 +77,7 @@ function blobStoreId(env: Env, token: string): string {
   const fromEnv = Boolean(explicit);
   const raw = fromEnv ? explicit!.replace(/^store_/, "") : (token.split("_")[3] ?? "");
   const id = raw.toLowerCase();
-  if (!DNS_LABEL.test(id)) {
+  if (!DNS_LABEL.test(id) || !isStoreHost(id)) {
     throw new ConfigError(`invalid env: ${fromEnv ? "BLOB_STORE_ID" : "BLOB_READ_WRITE_TOKEN"}`);
   }
   return id;

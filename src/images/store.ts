@@ -3,11 +3,7 @@ import { del, list, put } from "@vercel/blob";
 import { parseImageId, type ImageKind } from "./ids.js";
 import { sniffImage, type ImageInfo } from "./sniff.js";
 
-export const BLOB_HOST_SUFFIX = ".public.blob.vercel-storage.com";
-
-export function blobBaseUrl(storeId: string): string {
-  return `https://${storeId}${BLOB_HOST_SUFFIX}`;
-}
+export { BLOB_HOST_SUFFIX, blobBaseUrl } from "./blob-url.js";
 
 export interface ImageStore {
   /** Returns the public URL. Replaces only `up_` ids; a second put to an `img_` id throws. */
@@ -29,6 +25,8 @@ const UPLOAD_CACHE_SECONDS = 60;
 // The SDK documents no batch limit for del; chunking at the list page size
 // keeps each request body small.
 const DELETE_BATCH = 1_000;
+// 1,000 objects per page; far above what a personal store ever holds.
+const MAX_LIST_PAGES = 50;
 const OWN_PATH = /^\/(img|up)\/([0-9a-f]{32})$/;
 const OBJECT_PATHNAME = /^(img|up)\/([0-9a-f]{32})$/;
 
@@ -76,14 +74,17 @@ export function createBlobStore(
   return {
     ...scheme,
 
-    async put(id, bytes, info) {
+    async put(id, bytes) {
       const { kind, hex } = validId(id);
+      // The stored Content-Type comes from the bytes, never from the caller.
+      const sniffed = sniffImage(bytes);
+      if (!sniffed) throw new Error("not a supported image");
       const replaceable = kind === "up";
       let result;
       try {
         result = await put(`${kind}/${hex}`, Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength), {
           access: "public",
-          contentType: info.mime,
+          contentType: sniffed.mime,
           addRandomSuffix: false,
           allowOverwrite: replaceable,
           ...(replaceable ? { cacheControlMaxAge: UPLOAD_CACHE_SECONDS } : {}),
@@ -112,8 +113,15 @@ export function createBlobStore(
         // Redirects are not followed: a store URL never redirects, and a 3xx
         // would otherwise send this request somewhere unvetted.
         const response = await fetchImpl(url, { signal: controller.signal, redirect: "manual" });
-        if (response.status === 404) return null;
-        if (!response.ok) throw new Error(`blob read failed: HTTP ${response.status}`);
+        // An unread body keeps the connection busy until garbage collection.
+        if (response.status === 404) {
+          await response.body?.cancel();
+          return null;
+        }
+        if (!response.ok) {
+          await response.body?.cancel();
+          throw new Error(`blob read failed: HTTP ${response.status}`);
+        }
         const bytes = new Uint8Array(await response.arrayBuffer());
         const info = sniffImage(bytes);
         if (!info) throw new Error("stored object is not a supported image");
@@ -130,7 +138,12 @@ export function createBlobStore(
       const found: { id: string; url: string }[] = [];
       for (const prefix of ["img/", "up/"]) {
         let cursor: string | undefined;
-        do {
+        const seen = new Set<string>();
+        for (let pages = 0; ; pages++) {
+          // Each list call is a billed advanced operation, and going over the
+          // monthly allowance stops Blob for 30 days, so a misbehaving cursor
+          // must end the run instead of looping until the function times out.
+          if (pages >= MAX_LIST_PAGES) throw new Error("blob list exceeded page limit");
           const page = await list({ prefix, cursor, token });
           for (const blob of page.blobs) {
             const match = OBJECT_PATHNAME.exec(blob.pathname);
@@ -138,8 +151,11 @@ export function createBlobStore(
               found.push({ id: `${match[1]}_${match[2]}`, url: blob.url });
             }
           }
-          cursor = page.hasMore ? page.cursor : undefined;
-        } while (cursor);
+          if (!page.hasMore || !page.cursor) break;
+          if (seen.has(page.cursor)) throw new Error("blob list did not advance");
+          seen.add(page.cursor);
+          cursor = page.cursor;
+        }
       }
       return found;
     },
@@ -163,8 +179,10 @@ export function createMemoryStore(
   return {
     ...scheme,
 
-    async put(id, bytes, info) {
+    async put(id, bytes) {
       const { kind } = validId(id);
+      const info = sniffImage(bytes);
+      if (!info) throw new Error("not a supported image");
       if (kind === "img" && objects.has(id)) throw new Error("image already exists");
       objects.set(id, { bytes: bytes.slice(), info, uploadedAt: now() });
       return scheme.url(id);

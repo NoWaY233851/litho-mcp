@@ -1,3 +1,4 @@
+import { crc32 } from "node:zlib";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { bytesToBase64 } from "../src/images/base64.js";
@@ -112,6 +113,20 @@ describe("sharpThumbnailer", () => {
     const result = await makeThumbnail(sharpThumbnailer, await noisyPng(1536, 1024));
     expect(result).not.toBeNull();
     expect(result!.data.length).toBeLessThanOrEqual(300_000);
+  });
+
+  it("rejects an input over the pixel limit, and makeThumbnail then returns null", async () => {
+    // A valid PNG header claiming 12000x12000 (144 MP, under sharp's 268 MP default).
+    // No pixel data is needed, since the limit is checked from the header. The IHDR
+    // CRC is recomputed so the only thing wrong with the input is its size.
+    const png = Buffer.from(await noisyPng(8, 8));
+    png.writeUInt32BE(12_000, 16);
+    png.writeUInt32BE(12_000, 20);
+    png.writeUInt32BE(crc32(png.subarray(12, 29)), 29);
+    const claimed = new Uint8Array(png);
+    expect(sniffImage(claimed)).toMatchObject({ width: 12_000, height: 12_000 });
+    await expect(sharpThumbnailer.toWebp(claimed, 1024)).rejects.toThrow(/pixel limit/);
+    expect(await makeThumbnail(sharpThumbnailer, claimed)).toBeNull();
   });
 
   it("rejects bytes that are not an image", async () => {

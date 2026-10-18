@@ -11,12 +11,16 @@ export interface Thumbnailer {
 export const THUMBNAIL_BASE64_BUDGET = 300_000;
 const EDGES = [1024, 768, 512] as const;
 const WEBP_QUALITY = 75;
+// Same bound as MAX_IMAGE_SIDE in net/public-fetch.ts, as a pixel count. Generated
+// images have no side cap of their own and makeThumbnail may decode three times,
+// so a hostile or broken image must not reach sharp's 268 MP default.
+const MAX_INPUT_PIXELS = 8192 * 8192;
 
 export const sharpThumbnailer: Thumbnailer = {
   async toWebp(bytes, edge) {
     // rotate() with no argument applies the EXIF orientation first, so a camera
     // photo is not shown to Claude sideways.
-    const out = await sharp(bytes)
+    const out = await sharp(bytes, { limitInputPixels: MAX_INPUT_PIXELS })
       .rotate()
       .resize({ width: edge, height: edge, fit: "inside", withoutEnlargement: true })
       .webp({ quality: WEBP_QUALITY })

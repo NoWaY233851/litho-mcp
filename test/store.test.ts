@@ -26,6 +26,8 @@ const PNG_BYTES = Uint8Array.from(
   ),
 );
 
+const SVG_BYTES = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"><script>x</script></svg>');
+
 type PutResult = Awaited<ReturnType<typeof put>>;
 const putResult = (url: string): PutResult => ({ url }) as PutResult;
 
@@ -62,9 +64,16 @@ describe("memory store", () => {
     await store.put(IMG, PNG_BYTES, PNG);
     await expect(store.put(IMG, PNG_BYTES, PNG)).rejects.toThrow("image already exists");
     await store.put(UP, PNG_BYTES, PNG);
-    const replacement: ImageInfo = { mime: "image/png", width: 2, height: 2 };
-    await store.put(UP, PNG_BYTES, replacement);
-    expect((await store.get(UP))?.info).toEqual(replacement);
+    const wider = PNG_BYTES.slice();
+    wider[19] = 2; // IHDR width; the header is all the sniffer reads
+    await store.put(UP, wider, PNG);
+    expect((await store.get(UP))?.info).toEqual({ mime: "image/png", width: 2, height: 1 });
+  });
+
+  it("put rejects bytes that are not a supported image and stores nothing", async () => {
+    const store = createMemoryStore();
+    await expect(store.put(UP, SVG_BYTES, PNG)).rejects.toThrow("not a supported image");
+    expect(await store.get(UP)).toBeNull();
   });
 
   it("listOlderThan and delete follow the upload time", async () => {
@@ -146,14 +155,15 @@ describe("blob store", () => {
     });
   });
 
-  it("put: img_ sets neither allowOverwrite nor cacheControlMaxAge", async () => {
+  it("put: img_ sets neither allowOverwrite nor cacheControlMaxAge, and the contentType comes from the bytes", async () => {
     vi.mocked(put).mockResolvedValue(putResult(`${BASE}/img/${HEX}`));
+    // The caller's info claims WebP; the bytes are a PNG.
     await store().put(IMG, PNG_BYTES, { mime: "image/webp", width: 1, height: 1 });
     const [pathname, , options] = vi.mocked(put).mock.calls[0]!;
     expect(pathname).toBe(`img/${HEX}`);
     expect(options).toEqual({
       access: "public",
-      contentType: "image/webp",
+      contentType: "image/png",
       addRandomSuffix: false,
       allowOverwrite: false,
       token: TOKEN,
@@ -187,6 +197,11 @@ describe("blob store", () => {
     await expect(store().put(IMG, PNG_BYTES, PNG)).rejects.toThrow("Vercel Blob: Access denied");
   });
 
+  it("put: SVG bytes under a PNG info are rejected before the SDK is called", async () => {
+    await expect(store().put(UP, SVG_BYTES, PNG)).rejects.toThrow("not a supported image");
+    expect(put).not.toHaveBeenCalled();
+  });
+
   it("put: rejects an id that is not an image id without calling the SDK", async () => {
     await expect(store().put("img_nope", PNG_BYTES, PNG)).rejects.toThrow("invalid image id");
     expect(put).not.toHaveBeenCalled();
@@ -212,6 +227,27 @@ describe("blob store", () => {
 
     fetchMock.mockResolvedValueOnce(new Response("<html>not an image</html>", { status: 200 }));
     await expect(store().get(IMG)).rejects.toThrow("stored object is not a supported image");
+  });
+
+  it("get: cancels the unread body on 404 and on other failures", async () => {
+    const cancelled: string[] = [];
+    const response = (status: number) =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new Uint8Array([1]));
+          },
+          cancel() {
+            cancelled.push(String(status));
+          },
+        }),
+        { status },
+      );
+    fetchMock.mockResolvedValueOnce(response(404));
+    expect(await store().get(IMG)).toBeNull();
+    fetchMock.mockResolvedValueOnce(response(500));
+    await expect(store().get(IMG)).rejects.toThrow("blob read failed: HTTP 500");
+    expect(cancelled).toEqual(["404", "500"]);
   });
 
   it("get: an id that is not an image id is null without any request", async () => {
@@ -273,6 +309,20 @@ describe("blob store", () => {
       ["img/", "c1"],
       ["up/", undefined],
     ]);
+  });
+
+  it("listOlderThan: stops when a cursor repeats, instead of looping", async () => {
+    vi.mocked(list).mockResolvedValue({ blobs: [], hasMore: true, cursor: "stuck" } as never);
+    await expect(store().listOlderThan(5_000)).rejects.toThrow("blob list did not advance");
+    // First page, then the repeat is detected on the second.
+    expect(vi.mocked(list)).toHaveBeenCalledTimes(2);
+  });
+
+  it("listOlderThan: gives up after 50 pages for one prefix", async () => {
+    let n = 0;
+    vi.mocked(list).mockImplementation((async () => ({ blobs: [], hasMore: true, cursor: `c${n++}` })) as never);
+    await expect(store().listOlderThan(5_000)).rejects.toThrow("blob list exceeded page limit");
+    expect(vi.mocked(list)).toHaveBeenCalledTimes(50);
   });
 
   it("delete: no SDK call for an empty list; larger lists go in batches with the token", async () => {

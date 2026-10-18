@@ -5,7 +5,13 @@ import type { ImageInfo } from "../src/images/sniff.js";
 
 const DAY = 86_400_000;
 const PNG: ImageInfo = { mime: "image/png", width: 1, height: 1 };
-const BYTES = new Uint8Array([1, 2, 3]);
+// A 1x1 PNG; the stores only accept bytes that sniff as an image.
+const BYTES = Uint8Array.from(
+  Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    "base64",
+  ),
+);
 const id = (kind: "img" | "up", n: number) => `${kind}_${n.toString(16).padStart(32, "0")}`;
 
 describe("runCleanup", () => {

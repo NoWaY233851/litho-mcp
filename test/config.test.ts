@@ -56,6 +56,17 @@ describe("loadConfig: Blob settings", () => {
     expect((error as Error).message).not.toContain("evil");
   });
 
+  it("rejects hyphen edges and labels the URL parser cannot round-trip, without echoing the value", () => {
+    for (const id of ["xn--abc", "-abc", "abc-", "-", "xn--a-b-c"]) {
+      expect(() => loadConfig({ ...fullEnv, BLOB_STORE_ID: id }), id).toThrow(/^invalid env: BLOB_STORE_ID$/);
+    }
+    expect(() => loadConfig({ ...fullEnv, BLOB_READ_WRITE_TOKEN: "vercel_blob_rw_xn--abc_fake" })).toThrow(
+      /^invalid env: BLOB_READ_WRITE_TOKEN$/,
+    );
+    expect(loadConfig({ ...fullEnv, BLOB_STORE_ID: "a-b-1" }).blobStoreId).toBe("a-b-1");
+    expect(loadConfig({ ...fullEnv, BLOB_STORE_ID: "a".repeat(63) }).blobStoreId).toBe("a".repeat(63));
+  });
+
   it("every configuration failure is a ConfigError", () => {
     expect(() => loadConfig({})).toThrow(ConfigError);
     expect(() => loadConfig({ ...fullEnv, CRON_SECRET: "short" })).toThrow(ConfigError);
