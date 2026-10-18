@@ -15,7 +15,7 @@ import type { LookupFunction } from "node:net";
 import { Agent, fetch as undiciFetch } from "undici";
 import { MAX_IMAGE_BYTES } from "../images/limits.js";
 import { sniffImage, type ImageInfo } from "../images/sniff.js";
-import { isIpLiteral, isPublicIp } from "./ip.js";
+import { isIpLiteral, isPublicIp, trimTrailingDots } from "./ip.js";
 
 // Defined in a leaf module so the store can share the limit without importing this one.
 export { MAX_IMAGE_BYTES };
@@ -151,14 +151,19 @@ function parseUrl(input: string, base?: URL): URL {
   }
 }
 
+const MAX_HOSTNAME_LENGTH = 253;
+
 function checkUrl(url: URL): void {
   if (url.protocol !== "http:" && url.protocol !== "https:") throw new PublicFetchError("invalid_url");
   if (url.username !== "" || url.password !== "") throw new PublicFetchError("invalid_url");
   // The URL parser drops a port that equals the scheme's default, so "" means 80 or 443.
   if (url.port !== "" && url.port !== "80" && url.port !== "443") throw new PublicFetchError("invalid_url");
 
+  // DNS names are at most 253 characters, so a longer hostname cannot resolve. Checking first
+  // keeps every later step bounded by a short string.
+  if (url.hostname.length > MAX_HOSTNAME_LENGTH) throw new PublicFetchError("invalid_url");
   // "localhost." names the same host as "localhost", so trailing dots are ignored.
-  const host = url.hostname.toLowerCase().replace(/\.+$/, "");
+  const host = trimTrailingDots(url.hostname.toLowerCase());
   if (host === "") throw new PublicFetchError("invalid_url");
   if (isIpLiteral(host)) throw new PublicFetchError("blocked_host");
   if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) {

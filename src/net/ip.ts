@@ -110,6 +110,16 @@ export function isPublicIp(ip: string): boolean {
 }
 
 /**
+ * Drops trailing dots with a linear scan. A `/\.+$/` regex is quadratic on a long run of dots
+ * followed by a non-dot, which would stall the instance's event loop on a hostile hostname.
+ */
+export function trimTrailingDots(host: string): string {
+  let end = host.length;
+  while (end > 0 && host.charCodeAt(end - 1) === 0x2e) end -= 1;
+  return host.slice(0, end);
+}
+
+/**
  * True when a URL hostname is an IP address in any notation. WHATWG URL parsing has already
  * normalized hex, octal and integer IPv4 forms to a dotted quad by the time a hostname is read
  * from a URL; the last-label rule below mirrors the URL spec's "ends in a number" check so a
@@ -118,6 +128,6 @@ export function isPublicIp(ip: string): boolean {
 export function isIpLiteral(hostname: string): boolean {
   if (hostname.startsWith("[")) return true;
   if (parseV4(hostname) || parseV6(hostname)) return true;
-  const last = hostname.replace(/\.+$/, "").split(".").pop()!;
+  const last = trimTrailingDots(hostname).split(".").pop()!;
   return /^(\d+|0x[0-9a-f]*)$/i.test(last);
 }

@@ -117,6 +117,30 @@ describe("fetchPublicImage: URL checks", () => {
     expect(s.calls.fetched).toEqual([]);
   });
 
+  it("rejects a 100k-dot hostname as invalid_url without stalling the event loop", async () => {
+    const s = scripted({});
+    for (const tail of ["a", ""]) {
+      const url = `http://${".".repeat(100_000)}${tail}/a.png`;
+      const started = performance.now();
+      const reason = await reasonOf(fetchPublicImage(url, { resolve: s.resolve, httpGet: s.httpGet }));
+      expect(performance.now() - started).toBeLessThan(50);
+      expect(reason).toBe("invalid_url");
+    }
+    expect(s.calls.resolved).toEqual([]);
+  });
+
+  it("rejects a hostname over 253 characters and accepts one of exactly 253", async () => {
+    const label = "a".repeat(63);
+    const long = `${label}.${label}.${label}.${"a".repeat(58)}.com`; // 254 characters
+    expect(long.length).toBe(254);
+    const s = scripted({});
+    expect(await reasonOf(fetchPublicImage(`http://${long}/a.png`, { resolve: s.resolve, httpGet: s.httpGet }))).toBe("invalid_url");
+    const edge = long.slice(1);
+    s.httpGet = async () => ok(png(2, 2));
+    const result = await fetchPublicImage(`http://${edge}/a.png`, { resolve: s.resolve, httpGet: s.httpGet });
+    expect(result.info.width).toBe(2);
+  });
+
   it.each(["http://example.com/a.png", "http://example.com:80/a.png", "https://example.com:443/a.png", "http://example.com:443/a.png", "https://example.com:80/a.png", "http://example.com./a.png"])(
     "%j passes the URL checks",
     async (url) => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isIpLiteral, isPublicIp } from "../src/net/ip.js";
+import { isIpLiteral, isPublicIp, trimTrailingDots } from "../src/net/ip.js";
 
 describe("isPublicIp: blocked addresses", () => {
   const blocked = [
@@ -70,5 +70,23 @@ describe("isIpLiteral", () => {
     expect(isIpLiteral("1.2.3.4.")).toBe(true);
     expect(isIpLiteral("1.2.3.4..")).toBe(true);
     expect(isIpLiteral("example.com..")).toBe(false);
+  });
+});
+
+describe("trimTrailingDots", () => {
+  it("removes only trailing dots", () => {
+    expect(trimTrailingDots("example.com")).toBe("example.com");
+    expect(trimTrailingDots("example.com.")).toBe("example.com");
+    expect(trimTrailingDots("example.com...")).toBe("example.com");
+    expect(trimTrailingDots("a..b.")).toBe("a..b");
+    expect(trimTrailingDots("...")).toBe("");
+    expect(trimTrailingDots("")).toBe("");
+  });
+
+  it("is linear on a long run of dots followed by a non-dot", () => {
+    const started = performance.now();
+    expect(trimTrailingDots(`${".".repeat(100_000)}a`)).toHaveLength(100_001);
+    expect(isIpLiteral(`${".".repeat(100_000)}a`)).toBe(false);
+    expect(performance.now() - started).toBeLessThan(50);
   });
 });
