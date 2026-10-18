@@ -49,7 +49,7 @@ Options considered for the in-chat layout:
 - While a generation is running, it shows "Generating…" and the elapsed seconds. Generation often takes 30–90 seconds.
 - `img.onerror` shows an "expired" note.
 - Full-size images load from the image's public Blob URL ([0010](0010-vercel-blob-storage.md)) with `referrerpolicy="no-referrer"`. The CSP's `resourceDomains` lists only the wildcard `https://*.public.blob.vercel-storage.com`.
-- Text is in English and Traditional Chinese, chosen from `hostContext.locale`, falling back to `navigator.language`.
+- Text is in English and Traditional Chinese, chosen from `hostContext.locale`, falling back to `navigator.language`. Traditional Chinese is used only for Traditional locales (the Hant script, or Taiwan, Hong Kong or Macau without a script); every other locale, Simplified Chinese included, gets English.
 - The widget applies the host's theme, style tokens and fonts (`applyDocumentTheme`, `applyHostStyleVariables`, `applyHostFonts`), and stays readable in dark mode.
 - In fullscreen, content is padded by `hostContext.safeAreaInsets`.
 
@@ -107,3 +107,7 @@ Tested on claude.ai web (macOS Safari), Claude desktop (macOS) and the Claude iO
 - Full-size images now load from the image's public Blob URL ([0010](0010-vercel-blob-storage.md)) instead of the server's `/img/<id>` route, which no longer exists. The CSP's `resourceDomains` therefore lists the wildcard `https://*.public.blob.vercel-storage.com`, which claude.ai honors (see the 2026-10-17 validation). `connectDomains` lists the server origin only if the direct-POST upload fallback ([0006](0006-photo-uploads.md)) is used.
 - UI language now comes from `hostContext.locale`, which is set per app, falling back to `navigator.language`.
 - Theme, style tokens, fonts and fullscreen safe-area padding were added after the validation above.
+
+## Revision (2026-10-18)
+
+- Simplified Chinese locales (zh-CN, zh-SG, zh-Hans and bare zh) now get English instead of Traditional Chinese.

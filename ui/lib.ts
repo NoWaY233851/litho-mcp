@@ -24,9 +24,24 @@ export function formatMeta(sc: {
   return parts.join(" · ");
 }
 
-/** Every Chinese variant maps to Traditional Chinese: it is the only Chinese copy shipped. */
+/**
+ * Only English and Traditional Chinese copy ships, so Simplified Chinese locales get English
+ * rather than a script their reader did not choose (ADR 0005).
+ *
+ * Traditional means an explicit Hant script, or, with no script, Taiwan, Hong Kong or Macau.
+ * An explicit script wins over the region. Subtags after the first singleton (such as
+ * `-u-nu-hans`) are extensions and are ignored. `_` is accepted as a separator because some
+ * platforms report `zh_TW`.
+ */
 export function pickLocale(lang: string | undefined): Locale {
-  return lang?.toLowerCase().startsWith("zh") ? "zh-TW" : "en";
+  const subtags = (lang ?? "").toLowerCase().split(/[-_]/);
+  const singleton = subtags.findIndex((t) => t.length === 1);
+  const tags = singleton === -1 ? subtags : subtags.slice(0, singleton);
+  if (tags[0] !== "zh") return "en";
+  const script = tags.find((t, i) => i > 0 && t.length === 4);
+  if (script) return script === "hant" ? "zh-TW" : "en";
+  const region = tags.find((t, i) => i > 0 && (t.length === 2 || /^\d{3}$/.test(t)));
+  return region === "tw" || region === "hk" || region === "mo" ? "zh-TW" : "en";
 }
 
 export const STRINGS: Record<

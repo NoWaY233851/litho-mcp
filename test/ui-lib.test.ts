@@ -36,13 +36,32 @@ describe("formatMeta", () => {
 });
 
 describe("pickLocale", () => {
-  it("maps Chinese variants to zh-TW and everything else to en", () => {
-    expect(pickLocale("zh-TW")).toBe("zh-TW");
-    expect(pickLocale("zh-Hant-HK")).toBe("zh-TW");
-    expect(pickLocale("zh-Hant-TW")).toBe("zh-TW");
-    expect(pickLocale("en-US")).toBe("en");
-    expect(pickLocale(undefined)).toBe("en");
-  });
+  it.each([
+    "zh-TW",
+    "zh-HK",
+    "zh-MO",
+    "zh-Hant",
+    "zh-Hant-TW",
+    "zh-Hant-HK",
+    "zh-Hant-CN",
+    "zh_TW",
+    "ZH-tw",
+    "zh-TW-u-nu-hans",
+  ])("maps %s to zh-TW", (tag) => expect(pickLocale(tag)).toBe("zh-TW"));
+
+  it.each([
+    "zh",
+    "zh-CN",
+    "zh-SG",
+    "zh-Hans",
+    "zh-Hans-CN",
+    "zh-Hans-HK",
+    "en-US",
+    "ja-JP",
+    "zhx-TW",
+    "",
+    undefined,
+  ])("maps %s to en", (tag) => expect(pickLocale(tag)).toBe("en"));
 });
 
 describe("STRINGS", () => {
