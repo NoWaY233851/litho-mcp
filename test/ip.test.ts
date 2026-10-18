@@ -65,4 +65,10 @@ describe("isIpLiteral", () => {
     expect(isIpLiteral("example.0x10")).toBe(true);
     expect(isIpLiteral("12345")).toBe(true);
   });
+
+  it("ignores trailing dots", () => {
+    expect(isIpLiteral("1.2.3.4.")).toBe(true);
+    expect(isIpLiteral("1.2.3.4..")).toBe(true);
+    expect(isIpLiteral("example.com..")).toBe(false);
+  });
 });

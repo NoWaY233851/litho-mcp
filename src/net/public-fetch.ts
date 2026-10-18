@@ -208,29 +208,41 @@ async function readBody(response: Response, signal: AbortSignal): Promise<Uint8A
   }
   if (!response.body) return new Uint8Array(0);
 
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
+  // The body is copied straight into one buffer. Keeping the chunks as they arrive would let a
+  // server that sends one byte per write multiply the memory held for the same payload by the
+  // per-chunk overhead (measured at over 200x with undici).
+  let buffer = new Uint8Array(initialCapacity(declared));
   let total = 0;
+  const reader = response.body.getReader();
   try {
     for (;;) {
       const { done, value } = await abortable(signal, reader.read());
       if (done) break;
+      if (total + value.byteLength > MAX_IMAGE_BYTES) throw new PublicFetchError("too_large");
+      if (total + value.byteLength > buffer.byteLength) {
+        const grown = new Uint8Array(Math.min(Math.max(buffer.byteLength * 2, total + value.byteLength), MAX_IMAGE_BYTES));
+        grown.set(buffer.subarray(0, total));
+        buffer = grown;
+      }
+      buffer.set(value, total);
       total += value.byteLength;
-      if (total > MAX_IMAGE_BYTES) throw new PublicFetchError("too_large");
-      chunks.push(value);
     }
+  } catch (error) {
+    if (error instanceof PublicFetchError) throw error;
+    // The connection broke or the deadline passed (the caller reports the latter as a timeout).
+    throw new PublicFetchError("http_error");
   } finally {
     // After a clean read this is a no-op; on every early exit it closes the connection.
     reader.cancel().catch(noop);
   }
 
-  const bytes = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return bytes;
+  // Return a copy that owns exactly its bytes, so `.buffer` carries no unused capacity.
+  return total === buffer.byteLength ? buffer : buffer.slice(0, total);
+}
+
+function initialCapacity(declared: string | null): number {
+  if (declared !== null && /^\d+$/.test(declared)) return Math.max(1, Math.min(Number(declared), MAX_IMAGE_BYTES));
+  return 64 * 1024;
 }
 
 async function fetchFollowingRedirects(input: string, resolve: Resolve, httpGet: HttpGet, signal: AbortSignal): Promise<Uint8Array> {
@@ -279,10 +291,11 @@ export async function fetchPublicImage(
     if (info.width > MAX_IMAGE_SIDE || info.height > MAX_IMAGE_SIDE) throw new PublicFetchError("too_many_pixels");
     return { bytes, info };
   } catch (error) {
-    // Once the deadline has passed, whatever failed was cut short by it.
+    // Once the deadline has passed, whatever failed was cut short by it. Transport and body
+    // failures are already mapped to PublicFetchError where they happen; anything else is a
+    // programming error and propagates unchanged.
     if (timedOut) throw new PublicFetchError("timeout");
-    if (error instanceof PublicFetchError) throw error;
-    throw new PublicFetchError("http_error");
+    throw error;
   } finally {
     clearTimeout(timer);
     // Releases anything still in flight on an unexpected exit path.

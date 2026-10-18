@@ -118,6 +118,6 @@ export function isPublicIp(ip: string): boolean {
 export function isIpLiteral(hostname: string): boolean {
   if (hostname.startsWith("[")) return true;
   if (parseV4(hostname) || parseV6(hostname)) return true;
-  const last = hostname.replace(/\.$/, "").split(".").pop()!;
+  const last = hostname.replace(/\.+$/, "").split(".").pop()!;
   return /^(\d+|0x[0-9a-f]*)$/i.test(last);
 }

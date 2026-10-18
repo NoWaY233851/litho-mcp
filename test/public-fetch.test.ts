@@ -1,7 +1,8 @@
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { Agent } from "undici";
-import { afterEach, describe, expect, it } from "vitest";
+import { gzipSync } from "node:zlib";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   defaultHttpGet,
   fetchPublicImage,
@@ -315,6 +316,26 @@ describe("fetchPublicImage: response handling", () => {
     expect(await reasonOf(get(() => new Response(body, { status: 200, headers: { "content-length": "10" } })))).toBe("too_large");
   });
 
+  it("grows its buffer for bodies larger than the initial capacity and returns exact bytes", async () => {
+    const image = bytes(png(11, 12), Uint8Array.from({ length: 300_001 }, (_, i) => i % 251));
+    const chunked = (): Response =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            for (let i = 0; i < image.byteLength; i += 1000) controller.enqueue(image.slice(i, i + 1000));
+            controller.close();
+          },
+        }),
+        { status: 200 },
+      );
+    for (const headers of [undefined, { "content-length": "5" }]) {
+      const body = headers ? new Response(chunked().body, { status: 200, headers }) : chunked();
+      const result = (await get(() => body)) as { bytes: Uint8Array };
+      expect(result.bytes).toEqual(image);
+      expect(result.bytes.buffer.byteLength).toBe(image.byteLength);
+    }
+  });
+
   it("accepts a body of exactly the limit", async () => {
     const image = new Uint8Array(MAX_IMAGE_BYTES);
     image.set(png(2, 2));
@@ -367,6 +388,36 @@ describe("fetchPublicImage: response handling", () => {
   });
 });
 
+describe("fetchPublicImage: error mapping", () => {
+  it("maps a body that fails mid-stream to http_error", async () => {
+    const httpGet: HttpGet = async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(png(2, 2));
+            controller.error(new Error("connection reset by 93.184.216.34"));
+          },
+        }),
+        { status: 200 },
+      );
+    const error = await fetchPublicImage("https://example.com/a.png", { resolve: resolveAll(V4), httpGet }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(PublicFetchError);
+    expect((error as PublicFetchError).reason).toBe("http_error");
+    expect((error as PublicFetchError).message).not.toContain("93.184");
+    expect((error as PublicFetchError).cause).toBeUndefined();
+  });
+
+  it("lets an unexpected exception propagate instead of masking it", async () => {
+    const httpGet: HttpGet = async () =>
+      ({
+        get status(): number {
+          throw new TypeError("programming error");
+        },
+      }) as unknown as Response;
+    await expect(fetchPublicImage("https://example.com/a.png", { resolve: resolveAll(V4), httpGet })).rejects.toThrow(TypeError);
+  });
+});
+
 describe("fetchPublicImage: timeout", () => {
   const never = <T>(): Promise<T> => new Promise<T>(() => {});
 
@@ -397,10 +448,17 @@ describe("fetchPublicImage: timeout", () => {
     expect(await reasonOf(fetchPublicImage("https://example.com/a", { resolve: resolveAll(V4), httpGet, timeoutMs: 60 }))).toBe("timeout");
   });
 
-  it("does not leave a timer running after success", async () => {
-    const s = scripted({ "https://example.com/a.png": () => ok(png(1, 1)) });
-    await fetchPublicImage("https://example.com/a.png", { resolve: s.resolve, httpGet: s.httpGet, timeoutMs: 20 });
-    await new Promise((r) => setTimeout(r, 40));
+  it("clears its timer after success and after failure", async () => {
+    vi.useFakeTimers();
+    try {
+      const s = scripted({ "https://example.com/a.png": () => ok(png(1, 1)) });
+      await fetchPublicImage("https://example.com/a.png", { resolve: s.resolve, httpGet: s.httpGet });
+      expect(vi.getTimerCount()).toBe(0);
+      await expect(fetchPublicImage("https://example.com/missing", { resolve: s.resolve, httpGet: s.httpGet })).rejects.toBeInstanceOf(Error);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -484,6 +542,34 @@ describe("default httpGet (real undici, loopback only)", () => {
     await response.arrayBuffer();
     // The keep-alive socket would otherwise stay open on the idle Agent.
     await expect(Promise.race([closed, new Promise((_, reject) => setTimeout(() => reject(new Error("socket still open")), 2000))])).resolves.toBeUndefined();
+  });
+
+  // fetchPublicImage only talks to ports 80 and 443, so these route its requests to the loopback
+  // server through the real default transport.
+  const viaLoopback = (port: number): HttpGet => (url, _pinned, signal) =>
+    defaultHttpGet(new URL(`http://pinned.example.test:${port}${url.pathname}`), { address: "127.0.0.1", family: 4 }, signal);
+
+  it("reassembles a body sent as many one-byte writes into exactly its own bytes", async () => {
+    const image = bytes(png(7, 9), new Uint8Array(3000));
+    const port = await listen((req, res) => {
+      req.socket.setNoDelay(true);
+      res.writeHead(200);
+      for (const byte of image) res.write(Uint8Array.of(byte));
+      res.end();
+    });
+    const result = await fetchPublicImage("http://example.com/tiny-writes.png", { resolve: resolveAll(V4), httpGet: viaLoopback(port) });
+    expect(result.bytes).toEqual(image);
+    expect(result.bytes.buffer.byteLength).toBe(image.byteLength);
+    expect(result.info).toEqual({ mime: "image/png", width: 7, height: 9 });
+  });
+
+  it("rejects a gzip body that expands past the limit as too_large", async () => {
+    const compressed = gzipSync(Buffer.alloc(MAX_IMAGE_BYTES + 1024 * 1024));
+    expect(compressed.byteLength).toBeLessThan(64 * 1024);
+    const port = await listen((_req, res) => {
+      res.writeHead(200, { "content-encoding": "gzip", "content-length": String(compressed.byteLength) }).end(compressed);
+    });
+    expect(await reasonOf(fetchPublicImage("http://example.com/bomb.png", { resolve: resolveAll(V4), httpGet: viaLoopback(port) }))).toBe("too_large");
   });
 
   it("stops promptly when the signal aborts mid-body", async () => {
