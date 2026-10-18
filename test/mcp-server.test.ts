@@ -4,7 +4,7 @@ import { loadConfig } from "../src/config.js";
 import APP_HTML from "../src/generated/app-html.js";
 import { UI_URI, mcpFetch } from "../src/mcp/server.js";
 import { _resetModelCache } from "../src/openrouter/models.js";
-import { fakeDeps, fakeOpenRouter, fullEnv } from "./helpers.js";
+import { PNG_B64, fakeDeps, fakeOpenRouter, fullEnv } from "./helpers.js";
 
 const FLARE = "openai/gpt-image-2.5-flare";
 const WILDCARD_BLOB = "https://*.public.blob.vercel-storage.com";
@@ -41,6 +41,52 @@ describe.each(ERAS)("MCP endpoint, %s client", (_label, mode) => {
     const listUi = (byName.get("list_models")!._meta as { ui?: unknown } | undefined)?.ui;
     expect(listUi).toBeUndefined();
     expect(byName.get("generate_image")!.description).toContain("Images are kept for a limited time (30 days by default).");
+    await client.close();
+  });
+
+  it("lists edit_image and upload_image with the widget, and upload_image_data as app-only", async () => {
+    const { client } = await connect(mode);
+    const { tools } = await client.listTools();
+    const byName = new Map(tools.map((t) => [t.name, t]));
+    const ui = (name: string) => (byName.get(name)!._meta as { ui: { resourceUri: string; visibility?: string[] } }).ui;
+    expect(ui("edit_image").resourceUri).toBe(UI_URI);
+    expect(ui("upload_image").resourceUri).toBe(UI_URI);
+    expect(ui("upload_image_data")).toEqual({ resourceUri: UI_URI, visibility: ["app"] });
+    expect(ui("edit_image").visibility).toBeUndefined();
+    expect(ui("upload_image").visibility).toBeUndefined();
+    expect(byName.get("edit_image")!.description).toMatch(/^Edit an image, or create a new one from reference images/);
+    expect(byName.get("upload_image")!.description).toContain("(up_...)");
+    expect(byName.get("upload_image_data")!.description).toBe("Receive an uploaded image from the litho widget.");
+    await client.close();
+  });
+
+  it("uploads a photo through upload_image and upload_image_data, then edits it", async () => {
+    const { client, or } = await connect(mode);
+    const slot = await client.callTool({ name: "upload_image", arguments: {} });
+    const { kind, id } = slot.structuredContent as { kind: string; id: string };
+    expect(kind).toBe("upload");
+    expect(id).toMatch(/^up_[0-9a-f]{32}$/);
+
+    const uploaded = await client.callTool({ name: "upload_image_data", arguments: { id, data: PNG_B64 } });
+    expect(uploaded.structuredContent).toEqual({ kind: "uploaded", id, width: 1, height: 1 });
+
+    const edited = await client.callTool({ name: "edit_image", arguments: { prompt: "make it blue", image_ids: [id] } });
+    expect(edited.isError).toBeFalsy();
+    expect(edited.structuredContent).toMatchObject({ kind: "image", parent: id });
+    const refs = (or.posts()[0]!.body!.input_references as { image_url: { url: string } }[]).map((r) => r.image_url.url);
+    expect(refs).toEqual([`data:image/png;base64,${PNG_B64}`]);
+    await client.close();
+  });
+
+  it("answers an edit of a missing photo as a tool-level error", async () => {
+    const { client, or } = await connect(mode);
+    const result = await client.callTool({
+      name: "edit_image",
+      arguments: { prompt: "a", image_ids: ["up_00000000000000000000000000000001"] },
+    });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toContain("has not been uploaded yet, or it expired");
+    expect(or.posts()).toHaveLength(0);
     await client.close();
   });
 

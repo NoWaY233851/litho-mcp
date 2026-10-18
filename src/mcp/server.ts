@@ -6,11 +6,18 @@ import type { Deps } from "../deps.js";
 import APP_HTML from "../generated/app-html.js";
 import { BLOB_HOST_SUFFIX } from "../images/blob-url.js";
 import {
+  EDIT_DESCRIPTION,
+  EditArgs,
   GENERATE_DESCRIPTION,
   GenerateArgs,
   LIST_MODELS_DESCRIPTION,
+  UPLOAD_IMAGE_DATA_DESCRIPTION,
+  UPLOAD_IMAGE_DESCRIPTION,
+  editImage,
   generateImage,
   listModels,
+  openUploader,
+  uploadImageData,
 } from "./tools.js";
 
 export const UI_URI = "ui://litho/app.html";
@@ -45,6 +52,41 @@ export function createLithoServer(deps: Deps): McpServer {
       _meta: { ui: { resourceUri: UI_URI } satisfies McpUiToolMeta },
     },
     (args) => generateImage(deps, args),
+  );
+
+  registerAppTool(
+    server,
+    "edit_image",
+    {
+      description: EDIT_DESCRIPTION,
+      inputSchema: EditArgs,
+      _meta: { ui: { resourceUri: UI_URI } satisfies McpUiToolMeta },
+    },
+    (args) => editImage(deps, args),
+  );
+
+  registerAppTool(
+    server,
+    "upload_image",
+    {
+      description: UPLOAD_IMAGE_DESCRIPTION,
+      inputSchema: z.object({}),
+      _meta: { ui: { resourceUri: UI_URI } satisfies McpUiToolMeta },
+    },
+    () => openUploader(deps),
+  );
+
+  // Called by the widget with the photo's base64; hidden from the model so it never tries to
+  // send image data itself (docs/design/0006-photo-uploads.md).
+  registerAppTool(
+    server,
+    "upload_image_data",
+    {
+      description: UPLOAD_IMAGE_DATA_DESCRIPTION,
+      inputSchema: z.object({ id: z.string(), data: z.string() }),
+      _meta: { ui: { resourceUri: UI_URI, visibility: ["app"] } satisfies McpUiToolMeta },
+    },
+    (args) => uploadImageData(deps, args),
   );
 
   // Plain text for the model; the widget has nothing to show for it.

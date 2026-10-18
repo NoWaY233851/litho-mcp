@@ -68,6 +68,29 @@ describe("generateImage", () => {
     expect(or.posts().map((c) => c.body!.model)).toEqual(["recraft/recraft-v4.1-flash", FLARE]);
   });
 
+  it("uses DEFAULT_MODEL when it names a catalog model other than the built-in default", async () => {
+    const or = fakeOpenRouter();
+    const deps = fakeDeps({
+      config: loadConfig({ ...fullEnv, DEFAULT_MODEL: "recraft/recraft-v4.1-flash" }),
+      fetch: or.f,
+    });
+    const r = await generateImage(deps, { prompt: "a" });
+    expect(r.isError).toBeFalsy();
+    expect(or.posts().map((c) => c.body!.model)).toEqual(["recraft/recraft-v4.1-flash"]);
+    expect(r.structuredContent).toMatchObject({ model: "recraft/recraft-v4.1-flash" });
+  });
+
+  it("truncates an oversized model id in the unknown-model message", async () => {
+    const { or, deps } = setup();
+    const r = await generateImage(deps, { prompt: "a", model: "m".repeat(10_000) });
+    expect(r.isError).toBe(true);
+    const [message] = texts(r);
+    expect(message).toContain("Unknown model");
+    expect(message!.length).toBeLessThan(400);
+    expect(message).toContain("Call list_models");
+    expect(or.posts()).toHaveLength(0);
+  });
+
   it("states the pixel size when no aspect ratio was requested, and cost: unknown without a reported cost", async () => {
     const { deps } = setup({ images: () => Response.json({ data: [{ b64_json: PNG_B64 }] }) });
     const r = await generateImage(deps, { prompt: "a" });
