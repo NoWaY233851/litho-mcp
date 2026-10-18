@@ -58,7 +58,7 @@ beforeEach(() => _resetModelCache());
 describe("editImage", () => {
   it("edits from an image id: the reference is sent as a data URL and the result's parent is that id", async () => {
     const { or, deps, store } = setup();
-    await store.put(IMG_A, PNG, PNG_INFO);
+    await store.put(IMG_A, PNG);
     const r = await editImage(deps, { prompt: "make it blue", image_ids: [IMG_A] });
 
     expect(r.isError).toBeFalsy();
@@ -78,7 +78,7 @@ describe("editImage", () => {
 
   it("accepts an uploaded photo id and keeps it as the parent", async () => {
     const { or, deps, store } = setup();
-    await store.put(UP_A, PNG, PNG_INFO);
+    await store.put(UP_A, PNG);
     const r = await editImage(deps, { prompt: "x", image_ids: [UP_A] });
     expect(r.isError).toBeFalsy();
     expect(r.structuredContent).toMatchObject({ parent: UP_A });
@@ -87,8 +87,8 @@ describe("editImage", () => {
 
   it("reads this deployment's own Blob URL through the store, also with an upper-case host and a query, without an SSRF fetch", async () => {
     const { or, deps, store, fetched, fetchPublic } = setup();
-    await store.put(IMG_A, PNG, PNG_INFO);
-    await store.put(UP_A, PNG, PNG_INFO);
+    await store.put(IMG_A, PNG);
+    await store.put(UP_A, PNG);
     const guard = fetchPublic(async () => {
       throw new Error("must not be called");
     });
@@ -189,7 +189,7 @@ describe("editImage", () => {
 
   it("a model that cannot edit, and an unknown model, are errors before any load", async () => {
     const { or, deps, store } = setup();
-    await store.put(IMG_A, PNG, PNG_INFO);
+    await store.put(IMG_A, PNG);
     const cannot = await editImage(deps, { prompt: "x", model: "recraft/recraft-v4.1-flash", image_ids: [IMG_A] });
     expect(texts(cannot)[0]).toContain("cannot edit images");
     const unknown = await editImage(deps, { prompt: "x", model: "nope/missing", image_ids: [IMG_A] });
@@ -199,7 +199,7 @@ describe("editImage", () => {
 
   it("validates the image parameters against the model", async () => {
     const { or, deps, store } = setup();
-    await store.put(IMG_A, PNG, PNG_INFO);
+    await store.put(IMG_A, PNG);
     const r = await editImage(deps, { prompt: "x", model: KREA, image_ids: [IMG_A], quality: "high" });
     expect(r.isError).toBe(true);
     expect(texts(r)[0]).toContain('does not support "quality"');
@@ -234,8 +234,8 @@ describe("editImage", () => {
 
   it("the parent is the first stored reference, even when external URLs come before it in the list", async () => {
     const { deps, store, fetchPublic } = setup();
-    await store.put(IMG_A, PNG, PNG_INFO);
-    await store.put(IMG_B, PNG, PNG_INFO);
+    await store.put(IMG_A, PNG);
+    await store.put(IMG_B, PNG);
     const r = await editImage(
       deps,
       { prompt: "x", image_ids: [], image_urls: ["https://images.example.test/a.png", `${BASE}/img/${IMG_B.slice(4)}`, `${BASE}/img/${IMG_A.slice(4)}`] },
@@ -246,7 +246,7 @@ describe("editImage", () => {
 
   it("references keep their order: ids first, then URLs", async () => {
     const { or, deps, store, fetchPublic } = setup();
-    await store.put(IMG_A, PNG, PNG_INFO);
+    await store.put(IMG_A, PNG);
     const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xc0, 0, 11, 8, 0, 2, 0, 3, 1, 1, 0x11, 0, 0xff, 0xd9]);
     await editImage(
       deps,
@@ -320,7 +320,7 @@ describe("editImage", () => {
 
   it("loads each distinct id once, however often it is listed, but every occurrence is sent and counted", async () => {
     const { or, deps, store } = setup();
-    await store.put(IMG_A, PNG, PNG_INFO);
+    await store.put(IMG_A, PNG);
     let reads = 0;
     const get = store.get.bind(store);
     store.get = async (id) => {
@@ -335,7 +335,7 @@ describe("editImage", () => {
 
   it("counts every repeated occurrence toward the total size cap", async () => {
     const { or, deps, store } = setup();
-    await store.put(IMG_A, pngOfSize(100, 100, MAX_IMAGE_BYTES), { mime: "image/png", width: 100, height: 100 });
+    await store.put(IMG_A, pngOfSize(100, 100, MAX_IMAGE_BYTES));
     const r = await editImage(deps, { prompt: "x", image_ids: Array(5).fill(IMG_A) });
     expect(r.isError).toBe(true);
     expect(texts(r)[0]).toMatch(/40 MiB/);
@@ -344,7 +344,7 @@ describe("editImage", () => {
 
   it("an own URL and the same id share one read", async () => {
     const { deps, store } = setup();
-    await store.put(IMG_A, PNG, PNG_INFO);
+    await store.put(IMG_A, PNG);
     let reads = 0;
     const get = store.get.bind(store);
     store.get = async (id) => {
@@ -395,7 +395,7 @@ describe("editImage", () => {
     const { deps, store } = setup({
       images: () => Response.json({ error: { code: 502, message: "upstream" } }, { status: 502 }),
     });
-    await store.put(IMG_A, PNG, PNG_INFO);
+    await store.put(IMG_A, PNG);
     const r = await editImage(deps, { prompt: "x", image_ids: [IMG_A] });
     expect(r.isError).toBe(true);
     expect(texts(r)[0]).toContain("You were not charged");
@@ -403,7 +403,7 @@ describe("editImage", () => {
 
   it("a store failure after a successful edit says the image was generated but not saved", async () => {
     const { deps, store } = setup();
-    await store.put(IMG_A, PNG, PNG_INFO);
+    await store.put(IMG_A, PNG);
     store.put = async () => {
       throw new Error("blob unavailable");
     };
@@ -427,7 +427,7 @@ describe("editImage", () => {
 
   it("truncates an oversized model id in the unknown-model message", async () => {
     const { deps, store } = setup();
-    await store.put(IMG_A, PNG, PNG_INFO);
+    await store.put(IMG_A, PNG);
     const r = await editImage(deps, { prompt: "x", model: "m".repeat(10_000), image_ids: [IMG_A] });
     expect(r.isError).toBe(true);
     expect(texts(r)[0]!.length).toBeLessThan(400);

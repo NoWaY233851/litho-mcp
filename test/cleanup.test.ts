@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { runCleanup } from "../src/images/cleanup.js";
 import { createMemoryStore } from "../src/images/store.js";
-import type { ImageInfo } from "../src/images/sniff.js";
 
 const DAY = 86_400_000;
-const PNG: ImageInfo = { mime: "image/png", width: 1, height: 1 };
 // A 1x1 PNG; the stores only accept bytes that sniff as an image.
 const BYTES = Uint8Array.from(
   Buffer.from(
@@ -21,12 +19,12 @@ describe("runCleanup", () => {
     const store = createMemoryStore("https://blob.example.test", () => clock);
 
     clock = now - 31 * DAY;
-    await store.put(id("img", 1), BYTES, PNG);
-    await store.put(id("up", 2), BYTES, PNG);
+    await store.put(id("img", 1), BYTES);
+    await store.put(id("up", 2), BYTES);
     clock = now - 29 * DAY;
-    await store.put(id("img", 3), BYTES, PNG);
+    await store.put(id("img", 3), BYTES);
     clock = now - 1;
-    await store.put(id("up", 4), BYTES, PNG);
+    await store.put(id("up", 4), BYTES);
 
     expect(await runCleanup(store, now, 30)).toEqual({ deleted: 2 });
     expect(await store.get(id("img", 1))).toBeNull();
@@ -38,7 +36,7 @@ describe("runCleanup", () => {
   it("keeps an object exactly at the retention boundary", async () => {
     const now = 100 * DAY;
     const store = createMemoryStore("https://blob.example.test", () => now - 30 * DAY);
-    await store.put(id("img", 1), BYTES, PNG);
+    await store.put(id("img", 1), BYTES);
     expect(await runCleanup(store, now, 30)).toEqual({ deleted: 0 });
   });
 

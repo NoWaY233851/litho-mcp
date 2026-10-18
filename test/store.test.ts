@@ -42,7 +42,7 @@ describe("blobBaseUrl", () => {
 describe("memory store", () => {
   it("put/get round-trip; url(id) equals the URL put returns", async () => {
     const store = createMemoryStore();
-    const url = await store.put(IMG, PNG_BYTES, PNG);
+    const url = await store.put(IMG, PNG_BYTES);
     expect(url).toBe(store.url(IMG));
     expect(url).toBe(`https://blob.example.test/img/${HEX}`);
     const got = await store.get(IMG);
@@ -56,11 +56,11 @@ describe("memory store", () => {
     const store = createMemoryStore();
     const big = new Uint8Array(MAX_STORED_READ_BYTES + 1);
     big.set(PNG_BYTES);
-    await store.put(IMG, big, PNG);
+    await store.put(IMG, big);
     await expect(store.get(IMG)).rejects.toThrow("stored object too large");
     const atLimit = new Uint8Array(MAX_STORED_READ_BYTES);
     atLimit.set(PNG_BYTES);
-    await store.put(UP, atLimit, PNG);
+    await store.put(UP, atLimit);
     expect((await store.get(UP))?.bytes.length).toBe(MAX_STORED_READ_BYTES);
   });
 
@@ -74,27 +74,27 @@ describe("memory store", () => {
 
   it("a second put to an img_ id throws; to an up_ id replaces", async () => {
     const store = createMemoryStore();
-    await store.put(IMG, PNG_BYTES, PNG);
-    await expect(store.put(IMG, PNG_BYTES, PNG)).rejects.toThrow("image already exists");
-    await store.put(UP, PNG_BYTES, PNG);
+    await store.put(IMG, PNG_BYTES);
+    await expect(store.put(IMG, PNG_BYTES)).rejects.toThrow("image already exists");
+    await store.put(UP, PNG_BYTES);
     const wider = PNG_BYTES.slice();
     wider[19] = 2; // IHDR width; the header is all the sniffer reads
-    await store.put(UP, wider, PNG);
+    await store.put(UP, wider);
     expect((await store.get(UP))?.info).toEqual({ mime: "image/png", width: 2, height: 1 });
   });
 
   it("put rejects bytes that are not a supported image and stores nothing", async () => {
     const store = createMemoryStore();
-    await expect(store.put(UP, SVG_BYTES, PNG)).rejects.toThrow("not a supported image");
+    await expect(store.put(UP, SVG_BYTES)).rejects.toThrow("not a supported image");
     expect(await store.get(UP)).toBeNull();
   });
 
   it("listOlderThan and delete follow the upload time", async () => {
     let now = 1_000;
     const store = createMemoryStore("https://blob.example.test", () => now);
-    await store.put(IMG, PNG_BYTES, PNG);
+    await store.put(IMG, PNG_BYTES);
     now = 5_000;
-    await store.put(UP, PNG_BYTES, PNG);
+    await store.put(UP, PNG_BYTES);
     const old = await store.listOlderThan(3_000);
     expect(old).toEqual([{ id: IMG, url: store.url(IMG) }]);
     await store.delete(old.map((o) => o.url));
@@ -151,7 +151,7 @@ describe("blob store", () => {
 
   it("put: up_ sets allowOverwrite and cacheControlMaxAge 60; the token is passed explicitly", async () => {
     vi.mocked(put).mockResolvedValue(putResult(`${BASE}/up/${HEX}`));
-    const url = await store().put(UP, PNG_BYTES, PNG);
+    const url = await store().put(UP, PNG_BYTES);
     expect(url).toBe(`${BASE}/up/${HEX}`);
     expect(put).toHaveBeenCalledTimes(1);
     const [pathname, body, options] = vi.mocked(put).mock.calls[0]!;
@@ -170,8 +170,7 @@ describe("blob store", () => {
 
   it("put: img_ sets neither allowOverwrite nor cacheControlMaxAge, and the contentType comes from the bytes", async () => {
     vi.mocked(put).mockResolvedValue(putResult(`${BASE}/img/${HEX}`));
-    // The caller's info claims WebP; the bytes are a PNG.
-    await store().put(IMG, PNG_BYTES, { mime: "image/webp", width: 1, height: 1 });
+    await store().put(IMG, PNG_BYTES);
     const [pathname, , options] = vi.mocked(put).mock.calls[0]!;
     expect(pathname).toBe(`img/${HEX}`);
     expect(options).toEqual({
@@ -188,7 +187,7 @@ describe("blob store", () => {
     vi.mocked(put).mockResolvedValue(putResult(`${BASE}/up/${HEX}`));
     const pool = new Uint8Array(PNG_BYTES.length + 10);
     pool.set(PNG_BYTES, 5);
-    await store().put(UP, pool.subarray(5, 5 + PNG_BYTES.length), PNG);
+    await store().put(UP, pool.subarray(5, 5 + PNG_BYTES.length));
     const body = vi.mocked(put).mock.calls[0]![1] as Buffer;
     expect(Array.from(body)).toEqual(Array.from(PNG_BYTES));
   });
@@ -196,27 +195,27 @@ describe("blob store", () => {
   it("put: a returned URL that differs only in case is fine; another base throws", async () => {
     const upper = `${BASE}/up/${HEX}`.replace("teststore01", "TESTSTORE01");
     vi.mocked(put).mockResolvedValue(putResult(upper));
-    await expect(store().put(UP, PNG_BYTES, PNG)).resolves.toBe(`${BASE}/up/${HEX}`);
+    await expect(store().put(UP, PNG_BYTES)).resolves.toBe(`${BASE}/up/${HEX}`);
 
     vi.mocked(put).mockResolvedValue(putResult(`https://wrongstore${BLOB_HOST_SUFFIX}/up/${HEX}`));
-    await expect(store().put(UP, PNG_BYTES, PNG)).rejects.toThrow("blob base URL mismatch");
+    await expect(store().put(UP, PNG_BYTES)).rejects.toThrow("blob base URL mismatch");
   });
 
   it("put: an existing img_ object surfaces as 'image already exists'; other SDK errors pass through", async () => {
     vi.mocked(put).mockRejectedValueOnce(new Error("Vercel Blob: This blob already exists, use `allowOverwrite: true`"));
-    await expect(store().put(IMG, PNG_BYTES, PNG)).rejects.toThrow("image already exists");
+    await expect(store().put(IMG, PNG_BYTES)).rejects.toThrow("image already exists");
 
     vi.mocked(put).mockRejectedValueOnce(new Error("Vercel Blob: Access denied"));
-    await expect(store().put(IMG, PNG_BYTES, PNG)).rejects.toThrow("Vercel Blob: Access denied");
+    await expect(store().put(IMG, PNG_BYTES)).rejects.toThrow("Vercel Blob: Access denied");
   });
 
-  it("put: SVG bytes under a PNG info are rejected before the SDK is called", async () => {
-    await expect(store().put(UP, SVG_BYTES, PNG)).rejects.toThrow("not a supported image");
+  it("put: SVG bytes are rejected before the SDK is called", async () => {
+    await expect(store().put(UP, SVG_BYTES)).rejects.toThrow("not a supported image");
     expect(put).not.toHaveBeenCalled();
   });
 
   it("put: rejects an id that is not an image id without calling the SDK", async () => {
-    await expect(store().put("img_nope", PNG_BYTES, PNG)).rejects.toThrow("invalid image id");
+    await expect(store().put("img_nope", PNG_BYTES)).rejects.toThrow("invalid image id");
     expect(put).not.toHaveBeenCalled();
   });
 

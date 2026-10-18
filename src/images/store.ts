@@ -7,8 +7,8 @@ import { sniffImage, type ImageInfo } from "./sniff.js";
 export { BLOB_HOST_SUFFIX, blobBaseUrl } from "./blob-url.js";
 
 export interface ImageStore {
-  /** Returns the public URL. Replaces only `up_` ids; a second put to an `img_` id throws. */
-  put(id: string, bytes: Uint8Array, info: ImageInfo): Promise<string>;
+  /** Returns the public URL. The type is sniffed from `bytes`. Replaces only `up_` ids; a second put to an `img_` id throws. */
+  put(id: string, bytes: Uint8Array): Promise<string>;
   /**
    * `null` when nothing is stored under `id`, which also covers "does it exist". Throws
    * `Error("stored object too large")` for an object over 40 MiB rather than reading it.

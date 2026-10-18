@@ -102,7 +102,7 @@ export async function saveAndShow(
   const id = newImageId("img");
   let url: string;
   try {
-    url = await deps.store.put(id, created.bytes, created.info);
+    url = await deps.store.put(id, created.bytes);
   } catch (e) {
     deps.log(`image save failed: ${messageOf(e)}`);
     const cost = created.costUsd === null ? "The call may have been billed" : `OpenRouter reported a cost of ${formatCost(created.costUsd)}`;
@@ -414,7 +414,7 @@ export async function uploadImageData(deps: Deps, args: { id: string; data: stri
       return errorResult(`The photo is larger than ${MAX_IMAGE_SIDE} pixels on a side.`);
     }
     try {
-      await deps.store.put(args.id, bytes, info);
+      await deps.store.put(args.id, bytes);
     } catch (e) {
       deps.log(`upload save failed: ${messageOf(e)}`);
       return errorResult("The photo could not be saved. Try uploading it again.");
