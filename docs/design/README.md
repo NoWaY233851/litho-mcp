@@ -54,8 +54,8 @@ api/index.ts (one Node.js function, Fluid compute; vercel.json rewrites)
 
 claude.ai widget (sandbox iframe) ──<img src>──▶ Blob public URL (no function call)
 
-Env (encrypted): OPENROUTER_API_KEY, CONNECTOR_SECRET, CRON_SECRET, BLOB_READ_WRITE_TOKEN
-Env (plain):     DEFAULT_MODEL, RETENTION_DAYS, OPENROUTER_REFERER
+Env (secret):    OPENROUTER_API_KEY, CONNECTOR_SECRET, CRON_SECRET, BLOB_READ_WRITE_TOKEN
+Env (plain):     DEFAULT_MODEL, RETENTION_DAYS, OPENROUTER_REFERER, BLOB_STORE_ID (optional)
 ```
 
 There is no database and no OAuth state. Everything except `ImageStore`, `Thumbnailer` and the HTTP entry is host-neutral TypeScript.

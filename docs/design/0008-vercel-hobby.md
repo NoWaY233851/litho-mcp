@@ -58,14 +58,14 @@ The connector requirements behind [0001](0001-cloudflare-workers.md) still hold:
 - Moving back means writing R2 and Images-binding adapters and a Worker entry, not rewriting the core.
 
 **Configuration**
-- Encrypted environment variables: `OPENROUTER_API_KEY`, `CONNECTOR_SECRET` ([0009](0009-connector-secret-header.md)), `CRON_SECRET` ([0010](0010-vercel-blob-storage.md)), and `BLOB_READ_WRITE_TOKEN`, which the Blob integration sets.
-- Plain environment variables: `DEFAULT_MODEL`, `RETENTION_DAYS`, `OPENROUTER_REFERER` (optional).
+- Encrypted environment variables: `OPENROUTER_API_KEY`, `CONNECTOR_SECRET` ([0009](0009-connector-secret-header.md)), `CRON_SECRET` ([0010](0010-vercel-blob-storage.md)), and `BLOB_READ_WRITE_TOKEN`. Creating the store from the CLI sets that token as a plain variable, so setup stores it as a Secret ([0010](0010-vercel-blob-storage.md)).
+- Plain environment variables: `DEFAULT_MODEL`, `RETENTION_DAYS`, `OPENROUTER_REFERER` (optional), and `BLOB_STORE_ID` (optional; when set, it takes precedence for the public Blob base URL, see [0010](0010-vercel-blob-storage.md)).
 - Only the production alias is registered as the connector, never a per-deployment URL.
 - `.vercel/` holds the project and org ids, so it is gitignored.
 
 **Build and static files**
 - The build is a `vercel-build` script only, with no `build` script. It generates the widget and other build outputs before the function is bundled.
-- `public/` must exist and be non-empty (a `robots.txt` is enough). Without it, Vercel's builder would serve uploaded files outside `api/` as static files.
+- `public/` must exist and be non-empty (a `robots.txt` is enough). Without it, Vercel's builder would serve uploaded files outside `api/` as static files (inferred from the builder's source, not tested).
 - An allowlist `.vercelignore` uploads only the build inputs and `public/`.
 - Together, these mean only `public/` is served statically. Sources, `package.json`, `vercel.json` and generated files return 404.
 

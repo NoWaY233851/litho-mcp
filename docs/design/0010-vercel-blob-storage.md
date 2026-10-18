@@ -58,7 +58,7 @@ Moving to Vercel ([0008](0008-vercel-hobby.md)) removes R2, its lifecycle rules 
 - The server needs the store's public base URL before anything is stored, because `upload_image` returns the URL a photo will get ([0006](0006-photo-uploads.md)).
 - The base URL is `https://<store-id>.public.blob.vercel-storage.com`. The store id comes from `BLOB_STORE_ID` (with a `store_` prefix removed) when set, and otherwise from `BLOB_READ_WRITE_TOKEN`. It is always lowercased. Configuration loading fails if neither yields one.
 - The token's store id is mixed case while hostnames returned by `put` are lowercase, so URL comparisons ignore host case.
-- Vercel doesn't document the token format. The derivation was checked against real `put` results; if a future token format breaks it, `BLOB_STORE_ID` takes precedence.
+- Vercel doesn't document the token format. The derivation was checked against real `put` results. `BLOB_STORE_ID`, when set, takes precedence.
 
 **Retention**
 - A daily Vercel Cron job calls `/cron/cleanup` with `Authorization: Bearer <CRON_SECRET>`. Other callers are rejected.
