@@ -80,13 +80,26 @@ function parseJson(text: string): unknown {
   }
 }
 
-function httpError(status: number, text: string): OpenRouterError {
-  const body = parseJson(text);
-  const err = isObj(body) && isObj(body.error) ? body.error : undefined;
+/** Builds the error from an OpenRouter `error` object; `status` is the HTTP status it applies to. */
+function fromErrorObject(status: number, err: Obj | undefined): OpenRouterError {
   const code = typeof err?.code === "string" && err.code !== "" ? err.code : `http_${status}`;
   const message = typeof err?.message === "string" && err.message !== "" ? err.message : `HTTP ${status}`;
   const metadata = isObj(err?.metadata) ? err.metadata : undefined;
   return new OpenRouterError(status, code, truncate(message, MAX_PASSTHROUGH), metadata);
+}
+
+function httpError(status: number, text: string): OpenRouterError {
+  const body = parseJson(text);
+  return fromErrorObject(status, isObj(body) && isObj(body.error) ? body.error : undefined);
+}
+
+// A generation that fails after the response started can arrive as HTTP 200 with an `error`
+// object (https://openrouter.ai/docs/api/reference/errors-and-debugging). It is classified like
+// any other error, using the status the error itself reports.
+function inBodyError(httpStatus: number, err: Obj): OpenRouterError {
+  const n = err.code;
+  const status = typeof n === "number" && Number.isInteger(n) && n >= 100 && n <= 599 ? n : httpStatus;
+  return fromErrorObject(status, err);
 }
 
 export async function createImage(
@@ -114,6 +127,7 @@ export async function createImage(
 
   const invalid = () => new OpenRouterError(res.status, "invalid_response", "OpenRouter returned an unreadable response");
   const parsed = parseJson(res.text);
+  if (isObj(parsed) && isObj(parsed.error)) throw inBodyError(res.status, parsed.error);
   if (!isObj(parsed) || !Array.isArray(parsed.data)) throw invalid();
   if (parsed.data.length === 0) {
     throw new OpenRouterError(res.status, "empty_response", "OpenRouter returned no image");

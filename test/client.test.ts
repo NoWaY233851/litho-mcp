@@ -186,12 +186,62 @@ describe("createImage response", () => {
     ["an item that is not an object", () => json({ data: [null] })],
     ["a b64_json that is not a string", () => json({ data: [{ b64_json: 5 }] })],
     ["a b64_json that is not valid base64", () => json({ data: [{ b64_json: "not base64!!" }] })],
-    ["an error object in a 200 body", () => json({ error: { code: 500, message: "boom" } })],
+    ["an empty object", () => json({})],
   ])("throws invalid_response for %s", async (_name, respond) => {
     const { f } = recorder(respond);
     const e = await failure(createImage(cfg, req(), f));
     expect(e.code).toBe("invalid_response");
     expect(e.status).toBe(200);
+  });
+});
+
+describe("createImage errors inside a 200 body", () => {
+  const inBody = (error: Record<string, unknown>) => recorder(() => json({ error }));
+
+  it("treats an in-body 502 as the retryable, not-charged error", async () => {
+    const { f } = inBody({ code: 502, message: "Provider returned an invalid response" });
+    const e = await failure(createImage(cfg, req(), f));
+    expect(e.status).toBe(502);
+    expect(e.code).toBe("http_502");
+    expect(e.message).toBe("Provider returned an invalid response");
+    expect(describeOpenRouterError(e, null)).toMatch(/failed or timed out.*not charged.*retry/i);
+  });
+
+  it("treats an in-body 402 as a limit error", async () => {
+    const { f } = inBody({ code: 402, message: "Insufficient credits" });
+    const e = await failure(createImage(cfg, req(), f));
+    expect(e.status).toBe(402);
+    expect(describeOpenRouterError(e, { limit: 10, limitRemaining: 0, limitReset: "monthly" })).toMatch(
+      /spending limit.*\$10.*remaining \$0/i,
+    );
+  });
+
+  it("keeps the string code and metadata of an in-body error", async () => {
+    const { f } = inBody({ code: 403, message: "refused", metadata: { provider_name: "OpenAI" } });
+    const e = await failure(createImage(cfg, req(), f));
+    expect(e.status).toBe(403);
+    expect(describeOpenRouterError(e, null)).toMatch(/rejected by OpenAI content moderation/);
+  });
+
+  it.each([["a string", "server_error"], ["a float", 502.5], ["out of range", 99], ["too large", 600], ["missing", undefined]])(
+    "uses the HTTP status when the in-body code is %s",
+    async (_name, code) => {
+      const { f } = inBody({ code, message: "boom" });
+      const e = await failure(createImage(cfg, req(), f));
+      expect(e.status).toBe(200);
+      expect(e.code).toBe(code === "server_error" ? "server_error" : "http_200");
+      expect(describeOpenRouterError(e, null)).toBe("OpenRouter error 200: boom");
+    },
+  );
+
+  it("cuts a long in-body message to 500 characters", async () => {
+    const { f } = inBody({ code: 400, message: "z".repeat(2000) });
+    expect((await failure(createImage(cfg, req(), f))).message.length).toBeLessThanOrEqual(500);
+  });
+
+  it("still reports invalid_response when the body has neither data nor an error object", async () => {
+    const { f } = recorder(() => json({ error: "boom" }));
+    expect((await failure(createImage(cfg, req(), f))).code).toBe("invalid_response");
   });
 });
 
@@ -365,6 +415,21 @@ describe("describeOpenRouterError", () => {
     expect(text).toMatch(/content moderation/);
     expect(text.length).toBeLessThan(700);
     expect(text).not.toMatch(/r{501}/);
+  });
+
+  it("does not call a 403 without moderation metadata moderation", () => {
+    for (const metadata of [undefined, {}, { raw: "x" }]) {
+      const text = describeOpenRouterError(new OpenRouterError(403, "http_403", "Key lacks permission", metadata), null);
+      expect(text).toBe("OpenRouter error 403: Key lacks permission");
+      expect(text).not.toMatch(/moderation/i);
+    }
+    const long = describeOpenRouterError(new OpenRouterError(403, "http_403", "p".repeat(2000)), null);
+    expect(long).not.toMatch(/p{501}/);
+  });
+
+  it.each(["reasons", "flagged_input", "provider_name"])("treats a 403 with %s metadata as moderation", (k) => {
+    const e = new OpenRouterError(403, "http_403", "x", { [k]: k === "flagged_input" ? "text" : ["a"] });
+    expect(describeOpenRouterError(e, null)).toMatch(/content moderation/);
   });
 
   it("handles moderation metadata of the wrong shape", () => {

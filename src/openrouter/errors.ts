@@ -53,6 +53,11 @@ function isLimitError(e: OpenRouterError): boolean {
   return (typeof m.limit_source === "string" && LIMIT_SOURCES.has(m.limit_source)) || "limit_usd" in m;
 }
 
+// Only a 403 that carries moderation details is a refusal. Other 403s (permissions, guardrail
+// blocks) are not about the content, so they are passed through instead of mislabelled.
+const MODERATION_KEYS = ["reasons", "flagged_input", "provider_name"];
+const isModeration = (e: OpenRouterError): boolean => !!e.metadata && MODERATION_KEYS.some((k) => k in e.metadata!);
+
 const money = (n: number): string => `$${Number(n.toFixed(2))}`;
 
 function describeLimit(key: KeyInfo | null): string {
@@ -96,7 +101,7 @@ export function describeOpenRouterError(e: OpenRouterError, key: KeyInfo | null)
       return UNSUPPORTED_OUTPUT_MESSAGE;
   }
   if (isLimitError(e)) return describeLimit(key);
-  if (e.status === 403) return describeModeration(e);
+  if (e.status === 403 && isModeration(e)) return describeModeration(e);
   if (e.status === 502) {
     return "The OpenRouter generation failed or timed out (502). You were not charged, and you can retry.";
   }
