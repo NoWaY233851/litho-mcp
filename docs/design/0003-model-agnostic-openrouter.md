@@ -1,6 +1,6 @@
 # 0003. Model-agnostic via the OpenRouter Image API
 
-- Status: Accepted
+- Status: Accepted. Revised on 2026-10-18 for billing-accurate error messages.
 - Date: 2026-10-16
 
 ## Context
@@ -74,12 +74,17 @@ Remaining spend is available from `GET /api/v1/key`.
   - its maximum references;
   - which of the parameters above it supports, and their values;
   - a pricing summary.
-- OpenRouter errors become short, actionable messages:
-  - **Limit reached:** the message includes the limit, the remaining amount and the reset period from `/api/v1/key`.
-  - **Moderation:** the message names the provider.
-  - **Failures and timeouts:** the message says the call wasn't charged and can be retried.
-  - **Everything else:** OpenRouter's message is passed through.
-- No stack traces or keys appear in messages, and no bodies are logged.
+- OpenRouter errors become short, actionable messages. A message claims "not charged" only where OpenRouter documents it:
+  - **Limit reached:** any 402, or a 403 whose metadata carries a spending `limit_source` or `limit_usd`. The message includes the limit, the remaining amount and the reset period from `/api/v1/key`.
+  - **Moderation:** a 403 that is not a limit error counts as moderation only when its metadata carries moderation fields (`reasons`, `flagged_input`, `provider_name`). The message names the provider, and the reason if given. Any other 403 (permissions, guardrails) gets OpenRouter's message passed through.
+  - **502 from OpenRouter:** the message says the call wasn't charged and can be retried. This is the only case that claims "not charged".
+  - **408, 504, 524 and 529:** the message says the call failed or timed out and can be retried, with no billing claim.
+  - **The server's own 200-second timeout:** the generation may still finish and be billed, so the message says to check OpenRouter activity before retrying.
+  - **Failures after OpenRouter answered 2xx:** no image in the response, an unsupported format (SVG or anything that isn't PNG, JPEG or WebP), an unreadable response, or a body cut off mid-transfer. The message says the call may have been billed, includes the reported cost when OpenRouter gives one, and doesn't suggest a bare retry. For an empty result it suggests changing the prompt or the model.
+  - **Errors reported inside a 200 body:** classified like the same error returned as an HTTP status.
+  - **A network failure before any response:** the message says the call can be retried, with no billing claim.
+  - **Everything else:** OpenRouter's message is passed through, cut to 500 characters.
+- No stack traces or keys appear in messages, and no bodies are logged. Only the metadata fields the messages use are kept.
 
 **Request settings**
 - The OpenRouter request timeout is 200 seconds, inside Claude's 240-second limit.
@@ -94,3 +99,10 @@ Remaining spend is available from `GET /api/v1/key`.
 - A model's provider-specific extras stay unavailable.
 - Two catalog calls per hour per running server instance; a cold instance fetches the catalog again. Validation errors cost nothing.
 - Parameter support depends on OpenRouter's descriptors being accurate.
+
+## Revision (2026-10-18)
+
+- The error-message rules no longer say that every failure or timeout wasn't charged. Image generation is billed all-or-nothing, and OpenRouter documents that a generation that doesn't complete returns 502 and isn't billed ([image generation guide](https://openrouter.ai/docs/guides/overview/multimodal/image-generation), checked 2026-10-18).
+- OpenRouter sends a 200 as soon as the provider accepts the request, so generation errors can arrive inside a 200 body, and prompt processing may still be charged ([errors and debugging](https://openrouter.ai/docs/api/reference/errors-and-debugging), checked 2026-10-18). Failures after a 2xx therefore warn that the call may have been billed.
+- No billing statement covers 408, 504, 524, 529 or a client-side timeout, so those messages make no claim, and the timeout message tells Claude to check OpenRouter activity before retrying.
+- A 403 is treated as moderation only when it carries moderation metadata, so permission and guardrail errors are no longer mislabelled.
