@@ -53,7 +53,7 @@ The server spends the deployer's OpenRouter credit, so `/mcp` must not be open. 
 **Scope**
 - Only `/mcp` uses the connector secret.
 - `/cron/cleanup` checks `CRON_SECRET` instead ([0010](0010-vercel-blob-storage.md)).
-- The fallback upload token is keyed from `CONNECTOR_SECRET` ([0006](0006-photo-uploads.md)).
+- A direct-POST upload fallback, if it is ever built, would key its token from `CONNECTOR_SECRET` ([0006](0006-photo-uploads.md)). It is not built, and nothing serves `/upload`.
 - Image URLs are capability URLs and need no secret ([0010](0010-vercel-blob-storage.md)).
 - Nothing else is exposed.
 
@@ -69,6 +69,7 @@ The server spends the deployer's OpenRouter credit, so `/mcp` must not be open. 
   - someone can spend OpenRouter credit up to the key's spending limit;
   - they can't get the API key itself;
   - rotating the secret ends their access.
+- A leaked secret also allows free writes. `upload_image_data` accepts any well-formed `up_` id, and its app-only visibility is a host convention, not a server check. Enough uploads can exhaust Blob's operation or storage quota and pause Blob ([0010](0010-vercel-blob-storage.md)) without any OpenRouter spend. Rotating the secret ends this too.
 - There is no second factor, the same trade-off as 0002's owner password. A 256-bit secret can't be guessed online.
 - Rejected requests still count as function invocations, so a flood could use up the Hobby allowance and pause the service ([0008](0008-vercel-hobby.md)). This affects availability only.
 - When a connector is added, claude.ai first sends an `initialize` probe without the configured headers, so a server that enforces the secret always rejects it. The server must tolerate that rejection, and the add flow must not depend on the probe succeeding.

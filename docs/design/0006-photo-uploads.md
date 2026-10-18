@@ -1,6 +1,6 @@
 # 0006. Upload photos through the widget
 
-- Status: Accepted. Revised on 2026-10-16 after platform validation on web and iOS, and on 2026-10-17 for the move to Vercel. Validated on web, desktop and iOS; Android is untested.
+- Status: Accepted. Revised on 2026-10-16 after platform validation on web and iOS, on 2026-10-17 for the move to Vercel, and on 2026-10-18 for the upload size ladder. Validated on web, desktop and iOS; Android is untested.
 - Date: 2026-10-16
 
 ## Context
@@ -45,10 +45,12 @@ The widget also has to get the new image's id to Claude. The MCP Apps host offer
    - scale it to at most 2048 px on the long edge;
    - re-encode it as JPEG at quality 0.9.
 
+   If the result is too big for the transport (see the size ladder under Revision 2026-10-18), the widget retries with lower settings.
+
    This shrinks the upload and **strips EXIF, including GPS location**. The preview comes from that output, not from the file input. If the browser can't decode the file, the widget says so and suggests JPEG, PNG or WebP.
 4. **Transport.** The bytes go to the widget-only tool `upload_image_data({ id, data })`, which travels through the connector like any other tool call and needs no separate credential. This was confirmed on Vercel.
-   - A direct `POST /upload` with a short-lived token bound to the id also works. It is kept only as a fallback.
-   - That token is a 10-minute HMAC bound to the id. Its key is derived from `CONNECTOR_SECRET` ([0009](0009-connector-secret-header.md)) with a fixed label, so no extra secret is needed.
+   - A direct `POST /upload` with a short-lived token bound to the id worked from the widget's sandbox origin in validation. It is a recorded fallback only and is not built: nothing serves `/upload`.
+   - The recorded design is a 10-minute HMAC token bound to the id, keyed from `CONNECTOR_SECRET` ([0009](0009-connector-secret-header.md)) with a fixed label, so no extra secret would be needed.
 5. **The server** accepts only ids matching `^up_[0-9a-f]{32}$`, applies the same checks as reference URLs ([0007](0007-reference-urls-ssrf.md)), and stores the photo at `up/<hex>`:
    - PNG, JPEG or WebP, by magic bytes;
    - at most 10 MiB;
@@ -68,7 +70,7 @@ The widget also has to get the new image's id to Claude. The MCP Apps host offer
 ## Validation (2026-10-16, claude.ai web and iOS app)
 
 - **Arguments:** the widget-only tool received 1 MB and 3 MB base64 arguments on web (1.6–1.7 s) and iOS (0.75–1.1 s).
-- **Size ceiling:** `@modelcontextprotocol/server` 2.x caps MCP request bodies at 4 MiB. A 2048 px JPEG stays well under it.
+- **Size ceiling:** `@modelcontextprotocol/server` 2.x caps MCP request bodies at 4 MiB. The 2048 px JPEGs tested stayed well under it; the ladder in the 2026-10-18 revision covers detail-rich photos that do not.
 - **Direct `POST`:** it also worked from the widget's sandbox origin (`https://<32 hex>.claudemcpcontent.com`).
 - **The iOS picker:**
   - converts HEIC to JPEG on pick;
@@ -82,7 +84,7 @@ The widget also has to get the new image's id to Claude. The MCP Apps host offer
 
 Tested on claude.ai web (macOS Safari), Claude desktop (macOS) and the Claude iOS app against a throwaway Vercel deployment.
 
-- **Transport (decision confirmed):** `upload_image_data({ id, data })` carried 1 MB and 3 MB base64 arguments through Vercel on web (695 / 1,170 ms), desktop (726 / 1,344 ms) and iOS (736 / 1,336 ms). Both are below the SDK's 4 MiB cap and Vercel's 4.5 MB body cap. The direct-POST fallback is not needed.
+- **Transport (decision confirmed):** `upload_image_data({ id, data })` carried 1 MB and 3 MB base64 arguments through Vercel on web (695 / 1,170 ms), desktop (726 / 1,344 ms) and iOS (736 / 1,336 ms). Both are below the SDK's 4 MiB cap and Vercel's 4.5 MB body cap. The direct-POST fallback was not needed and is not built.
 - **Real photos:** a 40 MB PNG (web), a 48 MP iPhone photo and a ProRAW DNG (iOS) and a JPEG (desktop) were each scaled to at most 2048 px and re-encoded as JPEG at 0.9, giving 0.1-1.2 MB.
 - **State across reloads:** after a page reload, the widget's mount probe found the uploaded photo.
 - **Undecodable formats:** iOS converts HEIC to JPEG when picked and decodes ProRAW DNG. The desktop app (Chromium) can't decode DNG ("The source image could not be decoded") and probably not HEIC, and its file dialog offered the DNG despite the `accept` list. The widget therefore reports undecodable formats clearly and suggests JPEG, PNG or WebP.
@@ -99,8 +101,19 @@ Tested on claude.ai web (macOS Safari), Claude desktop (macOS) and the Claude iO
 ## Revision (2026-10-17)
 
 - The server-side steps are now worded for any host, after the move to Vercel ([0008](0008-vercel-hobby.md)). Photos are stored in the Blob store at `up/<hex>` ([0010](0010-vercel-blob-storage.md)).
-- The fallback direct-POST token was keyed from the owner password. That password went away with OAuth, so the key is now derived from `CONNECTOR_SECRET` ([0009](0009-connector-secret-header.md)).
+- The recorded direct-POST fallback token was keyed from the owner password. That password went away with OAuth, so its key would now be derived from `CONNECTOR_SECRET` ([0009](0009-connector-secret-header.md)).
 - On mount, the widget probes the upload id's public Blob URL instead of `/img/<id>`, and `upload_image` returns that URL. The server builds the URL from the store id taken from its Blob credentials, as described in [0010](0010-vercel-blob-storage.md), so it knows the URL before the first write. Host names compare case-insensitively.
 - Vercel caps non-streamed function bodies at 4.5 MB. That is above the 4 MiB MCP cap, so the MCP cap still sets the ceiling.
 - Widget-initiated tool calls carry the connector's request header ([0009](0009-connector-secret-header.md)).
 - Photos are stored with a 60-second cache lifetime and the widget adds a cache-busting query when it shows or probes them. An edit started within about 60 seconds of replacing a photo may still read the previous photo. This is accepted ([0010](0010-vercel-blob-storage.md)).
+
+## Revision (2026-10-18)
+
+- **Upload size ladder.** The server rejects MCP request bodies over 4 MiB, and a detail-rich photo can exceed that as a 2048 px JPEG at quality 0.9. The widget therefore keeps the `data` argument at or under 4 MiB minus 64 KiB of base64 characters (the margin covers the JSON-RPC envelope). It re-encodes from the decoded image, never from a previous JPEG, and uses the first step that fits:
+  1. 2048 px long edge, quality 0.9
+  2. 2048 px, quality 0.8
+  3. 2048 px, quality 0.7
+  4. 1536 px, quality 0.8
+
+  If no step fits, the widget reports that the upload failed. The ladder is defined in `ui/lib.ts`.
+- The server-side 10 MiB check on uploads is unchanged. It no longer limits the widget in practice, because the transport cap is lower, and stays as defense in depth for other callers.

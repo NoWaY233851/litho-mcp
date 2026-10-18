@@ -107,6 +107,8 @@ All commands run from a clone of this repository. Check flags against `npx verce
 
    The response must be `401` with `{"error":"unauthorized"}`.
 
+   This check does not touch Blob. The next section has a second check that does.
+
 ## Add the connector in claude.ai
 
 1. Open Customize > Connectors and add a custom connector.
@@ -117,6 +119,15 @@ All commands run from a clone of this repository. Check flags against `npx verce
 
 The add completes directly, with no "Continue anyway" step. While adding, claude.ai sends an `initialize` request without headers and gets `401`, and it looks up OAuth metadata under `/.well-known/` and gets Vercel's static `404`. Both are expected. In Vercel's request log the first shows only as a `401`; the server logs nothing about it.
 
+### First test: upload a photo
+
+Before any generation, ask Claude to call `upload_image`, then pick any photo in the widget. This is the recommended first test because it costs nothing: it makes no OpenRouter request. When the widget shows the photo as uploaded, the Blob token, the store id and the public image URL derived from them all work end to end. A wrong Blob base URL (a bad `BLOB_STORE_ID`, or an unusable store id in the token) would otherwise first show up on the first paid `generate_image`, which would fail with "could not be saved" after the model had already been billed.
+
+If the widget reports that the photo could not be uploaded, the server answered "The photo could not be saved. Try uploading it again." and logged the cause in the deployment's Vercel log as `upload save failed: <reason>`. The reason is one of:
+
+- `blob base URL mismatch`: Blob accepted the write, but the URL it returned differs from the one the server derives from `BLOB_STORE_ID` or the token. Fix or remove `BLOB_STORE_ID`, redeploy and retry.
+- an error from the Blob SDK, such as an invalid or revoked token: check `BLOB_READ_WRITE_TOKEN`.
+
 If claude.ai reports a "Connection issue" saying the server asked for sign-in (status 401), the header value is wrong or missing.
 
 ## Rotate the secret
@@ -125,7 +136,7 @@ If claude.ai reports a "Connection issue" saying the server asked for sign-in (s
 
    ```
    CONNECTOR_SECRET=$(openssl rand -base64 32)
-   printf %s "$CONNECTOR_SECRET" | pbcopy
+   printf %s "$CONNECTOR_SECRET" | pbcopy   # macOS; elsewhere, copy it by hand
    ```
 
 2. Replace the variable. Do not run this with an empty `CONNECTOR_SECRET`; the server would refuse to serve.
@@ -152,6 +163,8 @@ Images are deleted `RETENTION_DAYS` days after creation (default 30). Cleanup is
 ## Security notes
 
 - Image links are capability URLs: the Blob store is public, and anyone holding a link can view that image. Links are unguessable and are not listed anywhere, but treat them like shared secrets. Images are deleted after the retention period.
+- Vercel Blob counts every download against the Hobby data-transfer quota, cache hits included: 10 GB a month (checked 2026-10-18 at <https://vercel.com/docs/vercel-blob/usage-and-pricing>, updated 2026-09-23). Going over pauses Blob access for up to 30 days, so a widely shared link can pause the deployment.
+- To revoke one leaked image, run `npx vercel blob del <url>` (flags checked against Vercel CLI 64.5.0; see the `--oidc-token` note under [Development](#development)). Because of CDN propagation, the image can stay reachable for up to about 60 seconds after deletion.
 - `CONNECTOR_SECRET` is a long-lived bearer secret. Anyone who has it can use your OpenRouter key through this server. It is compared in constant time, and a wrong and a missing secret get the same response.
 - There is no OAuth and no per-session sign-in. Rotation is manual (see above).
 - URLs passed to `edit_image` are fetched by the server behind SSRF checks (see [ADR 0007](docs/design/0007-reference-urls-ssrf.md)).
