@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_UPLOAD_BASE64_CHARS,
   STRINGS,
+  UPLOAD_ENCODE_LADDER,
   bytesToBase64,
   fitWithin,
   formatMeta,
@@ -94,8 +95,19 @@ describe("upload size", () => {
     expect(bytesToBase64(bytes)).toBe(Buffer.from(bytes).toString("base64"));
   });
 
-  it("caps base64 at the encoded size of 10 MiB", () => {
-    const tenMiB = 10 * 1024 * 1024;
-    expect(MAX_UPLOAD_BASE64_CHARS).toBe(bytesToBase64(new Uint8Array(tenMiB)).length);
+  it("caps base64 below the 4 MiB MCP request body limit", () => {
+    expect(MAX_UPLOAD_BASE64_CHARS).toBe(4 * 1024 * 1024 - 64 * 1024);
+    expect(MAX_UPLOAD_BASE64_CHARS).toBeLessThan(4 * 1024 * 1024);
+  });
+});
+
+describe("UPLOAD_ENCODE_LADDER", () => {
+  it("steps down in a fixed order, starting at the default", () => {
+    expect(UPLOAD_ENCODE_LADDER).toEqual([
+      { edge: 2048, quality: 0.9 },
+      { edge: 2048, quality: 0.8 },
+      { edge: 2048, quality: 0.7 },
+      { edge: 1536, quality: 0.8 },
+    ]);
   });
 });

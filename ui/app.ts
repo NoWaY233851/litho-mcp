@@ -6,6 +6,7 @@ import type { McpUiHostContext } from "@modelcontextprotocol/ext-apps";
 import {
   MAX_UPLOAD_BASE64_CHARS,
   STRINGS,
+  UPLOAD_ENCODE_LADDER,
   bytesToBase64,
   fitWithin,
   formatMeta,
@@ -13,8 +14,6 @@ import {
   withCacheBuster,
 } from "./lib.js";
 import type { Locale } from "./lib.js";
-
-const UPLOAD_EDGE = 2048;
 
 type ImageResult = {
   url: string;
@@ -243,25 +242,33 @@ async function uploadPhoto(file: File): Promise<void> {
     return;
   }
 
-  let data: string;
-  let canvas: HTMLCanvasElement;
+  let data: string | undefined;
+  let canvas: HTMLCanvasElement | undefined;
   try {
-    const { w, h } = fitWithin(bitmap.width, bitmap.height, UPLOAD_EDGE);
-    canvas = el("canvas", { width: w, height: h });
-    const g = canvas.getContext("2d");
-    if (!g) throw new Error("no 2d context");
-    g.drawImage(bitmap, 0, 0, w, h);
-    // Re-encoding drops EXIF and GPS; the canvas, not the input's own thumbnail, is the preview.
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
-    if (!blob) throw new Error("encode failed");
-    data = bytesToBase64(new Uint8Array(await blob.arrayBuffer()));
+    // Each step re-encodes from the decoded bitmap, never from the previous JPEG.
+    for (const { edge, quality } of UPLOAD_ENCODE_LADDER) {
+      const { w, h } = fitWithin(bitmap.width, bitmap.height, edge);
+      const c = el("canvas", { width: w, height: h });
+      const g = c.getContext("2d");
+      if (!g) throw new Error("no 2d context");
+      g.drawImage(bitmap, 0, 0, w, h);
+      // Re-encoding drops EXIF and GPS; the canvas, not the input's own thumbnail, is the preview.
+      const blob = await new Promise<Blob | null>((resolve) => c.toBlob(resolve, "image/jpeg", quality));
+      if (!blob) throw new Error("encode failed");
+      const encoded = bytesToBase64(new Uint8Array(await blob.arrayBuffer()));
+      if (encoded.length <= MAX_UPLOAD_BASE64_CHARS) {
+        data = encoded;
+        canvas = c;
+        break;
+      }
+    }
   } catch {
     fail({ key: "uploadFailed" });
     return;
   } finally {
     bitmap.close();
   }
-  if (data.length > MAX_UPLOAD_BASE64_CHARS) {
+  if (data === undefined || !canvas) {
     fail({ key: "uploadFailed" });
     return;
   }
@@ -295,8 +302,8 @@ fileInput.onchange = () => {
 app.ontoolinput = (params) => {
   if (typeof params.arguments?.prompt !== "string") return;
   stopTimer();
-  setView({ kind: "waiting", startedAt: Date.now() });
   const startedAt = Date.now();
+  setView({ kind: "waiting", startedAt });
   timer = window.setInterval(() => {
     if (waitingLine) waitingLine.textContent = waitingText(startedAt);
   }, 1000);

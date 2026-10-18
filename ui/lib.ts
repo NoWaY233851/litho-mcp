@@ -81,8 +81,23 @@ export function withCacheBuster(url: string, token: string | number): string {
   return `${base}${base.includes("?") ? "&" : "?"}v=${token}${fragment}`;
 }
 
-/** Encoded size of the server's 10 MiB image limit; a larger `data` argument is refused. */
-export const MAX_UPLOAD_BASE64_CHARS = Math.ceil((10 * 1024 * 1024) / 3) * 4;
+/**
+ * Largest `data` argument the widget sends. The MCP server rejects request bodies over 4 MiB
+ * (and Vercel caps bodies at 4.5 MB), so the cap is that limit minus room for the JSON-RPC
+ * envelope. The server's own 10 MiB image check stays as defense in depth.
+ */
+export const MAX_UPLOAD_BASE64_CHARS = 4 * 1024 * 1024 - 64 * 1024;
+
+/**
+ * Encodings tried in order until one fits `MAX_UPLOAD_BASE64_CHARS`. Detail-rich photos can
+ * exceed the cap at the first step; each later step trades quality, then size, for bytes.
+ */
+export const UPLOAD_ENCODE_LADDER: readonly { readonly edge: number; readonly quality: number }[] = [
+  { edge: 2048, quality: 0.9 },
+  { edge: 2048, quality: 0.8 },
+  { edge: 2048, quality: 0.7 },
+  { edge: 1536, quality: 0.8 },
+];
 
 /** Plain base64 (no `data:` prefix). Chunked so large photos don't overflow the call stack. */
 export function bytesToBase64(bytes: Uint8Array): string {
