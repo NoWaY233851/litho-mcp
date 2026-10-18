@@ -1,0 +1,107 @@
+// OpenRouter failures and the short, honest messages Claude sees for them (spec 5.8).
+//
+// Billing claims are made only where OpenRouter documents them. Its image guide states that a
+// failed generation returns 502 and is not billed (https://openrouter.ai/docs/guides/overview/multimodal/image-generation);
+// it says nothing about 408, 504, 524, 529 or a client-side timeout, so those messages say the
+// call failed and can be retried without promising anything about the charge.
+//
+// Text that comes from OpenRouter is cut to MAX_PASSTHROUGH characters. Nothing here logs, and
+// no message includes a header, a request body or the API key.
+
+export interface KeyInfo {
+  limit: number | null;
+  limitRemaining: number | null;
+  limitReset: string | null;
+}
+
+export class OpenRouterError extends Error {
+  constructor(
+    readonly status: number,
+    // Always a string: the error body's code when it is a non-empty string, otherwise
+    // "http_<status>", or one of the codes this module raises itself (timeout, network_error,
+    // invalid_response, empty_response, unsupported_output).
+    readonly code: string,
+    message: string,
+    readonly metadata?: Record<string, unknown>,
+  ) {
+    super(message);
+    this.name = "OpenRouterError";
+  }
+}
+
+export const MAX_PASSTHROUGH = 500;
+
+/** At most `max` UTF-16 units including the ellipsis, never splitting a surrogate pair. */
+export function truncate(text: string, max = MAX_PASSTHROUGH): string {
+  if (text.length <= max) return text;
+  let end = max - 1;
+  const last = text.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return `${text.slice(0, end)}…`;
+}
+
+export const UNSUPPORTED_OUTPUT_MESSAGE =
+  "The model returned an image format that can't be used (for example SVG). Only PNG, JPEG and WebP are supported. Try a different model or output_format.";
+
+const LIMIT_SOURCES = new Set(["openrouter_credits", "openrouter_key_limit", "openrouter_in_flight_budget"]);
+
+function isLimitError(e: OpenRouterError): boolean {
+  if (e.status === 402) return true;
+  if (e.status !== 403) return false;
+  const m = e.metadata;
+  if (!m) return false;
+  return (typeof m.limit_source === "string" && LIMIT_SOURCES.has(m.limit_source)) || "limit_usd" in m;
+}
+
+const money = (n: number): string => `$${Number(n.toFixed(2))}`;
+
+function describeLimit(key: KeyInfo | null): string {
+  const parts: string[] = [];
+  if (key?.limit != null) parts.push(`limit ${money(key.limit)}`);
+  if (key?.limitRemaining != null) parts.push(`remaining ${money(key.limitRemaining)}`);
+  if (key?.limitReset) parts.push(`resets ${truncate(key.limitReset, 50)}`);
+  const detail = parts.length > 0 ? ` (${parts.join(", ")})` : "";
+  return `OpenRouter spending limit reached${detail}. Raise the limit or add credits on OpenRouter, then try again.`;
+}
+
+function describeModeration(e: OpenRouterError): string {
+  const provider = e.metadata?.provider_name;
+  const reasons = e.metadata?.reasons;
+  const who = typeof provider === "string" && provider.trim() ? `${truncate(provider.trim(), 100)} ` : "";
+  const list = Array.isArray(reasons)
+    ? reasons.filter((r): r is string => typeof r === "string" && r.trim() !== "").join(", ")
+    : typeof reasons === "string"
+      ? reasons
+      : "";
+  const why = list ? ` Reason: ${truncate(list)}` : "";
+  return `The request was rejected by ${who}content moderation.${why} Change the prompt or the image and try again.`;
+}
+
+/**
+ * @param key limits from GET /api/v1/key, or null when they could not be fetched
+ */
+export function describeOpenRouterError(e: OpenRouterError, key: KeyInfo | null): string {
+  // Codes this module raises itself come first: their statuses (408, 502, 200) would otherwise
+  // be mistaken for upstream failures with different billing semantics.
+  switch (e.code) {
+    case "timeout":
+      return "The OpenRouter call timed out after 200 s. The generation may still finish and be billed, so check OpenRouter activity before retrying.";
+    case "network_error":
+      return "Could not reach OpenRouter (network error). The call can be retried.";
+    case "invalid_response":
+      return "OpenRouter returned an unreadable response, which is not retryable as is. Check the model and parameters, or try a different model.";
+    case "empty_response":
+      return "OpenRouter returned no image. Try again, or try a different model.";
+    case "unsupported_output":
+      return UNSUPPORTED_OUTPUT_MESSAGE;
+  }
+  if (isLimitError(e)) return describeLimit(key);
+  if (e.status === 403) return describeModeration(e);
+  if (e.status === 502) {
+    return "The OpenRouter generation failed or timed out (502). You were not charged, and you can retry.";
+  }
+  if ([408, 504, 524, 529].includes(e.status)) {
+    return `The OpenRouter generation failed or timed out (HTTP ${e.status}). The call can be retried.`;
+  }
+  return `OpenRouter error ${e.status}: ${truncate(e.message)}`;
+}
