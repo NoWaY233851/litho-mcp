@@ -52,7 +52,7 @@ The connector requirements behind [0001](0001-cloudflare-workers.md) still hold:
 **A way back to Cloudflare**
 - Everything except three adapters is plain TypeScript with no Vercel imports: format sniffing, SSRF checks, the model catalog and validation, the OpenRouter client, the tools and result building.
 - The three adapters:
-  - **`ImageStore`**: `put`, `get`, `exists`, `url`, `listOlderThan`, `delete`; on Vercel Blob ([0010](0010-vercel-blob-storage.md));
+  - **`ImageStore`**: `put`, `get`, `url`, `idFromUrl`, `listOlderThan`, `delete`; on Vercel Blob ([0010](0010-vercel-blob-storage.md));
   - **`Thumbnailer`**: image bytes to WebP bytes; on sharp ([0010](0010-vercel-blob-storage.md));
   - **the HTTP entry**: `api/index.ts`.
 - Moving back means writing R2 and Images-binding adapters and a Worker entry, not rewriting the core.

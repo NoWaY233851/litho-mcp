@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { loadConfig } from "../src/config.js";
+import { ConfigError, loadConfig } from "../src/config.js";
+import { createDeps } from "../src/deps.js";
+import { blobBaseUrl } from "../src/images/store.js";
 import { createLazyFetch, handleRequest } from "../src/http.js";
 import { fakeDeps, fullEnv } from "./helpers.js";
 
@@ -51,7 +53,7 @@ describe("createLazyFetch", () => {
     const log = vi.fn();
     let broken = true;
     const build = vi.fn(() => {
-      if (broken) throw new Error("missing env: CRON_SECRET");
+      if (broken) throw new ConfigError("missing env: CRON_SECRET");
       return fakeDeps();
     });
     const handle = createLazyFetch(build, log);
@@ -66,11 +68,36 @@ describe("createLazyFetch", () => {
     expect(build).toHaveBeenCalledTimes(2);
   });
 
+  it("logs only a fixed text for an error that is not a ConfigError", async () => {
+    const log = vi.fn();
+    const handle = createLazyFetch(() => {
+      throw new Error("secret-bearing detail from a dependency");
+    }, log);
+    const response = await handle(new Request("https://x.test/mcp"));
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: "server_misconfigured" });
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log).toHaveBeenCalledWith("failed to build dependencies");
+  });
+
   it("memoizes a successful build", async () => {
     const build = vi.fn(() => fakeDeps());
     const handle = createLazyFetch(build, () => {});
     await handle(new Request("https://x.test/nope"));
     await handle(new Request("https://x.test/nope"));
     expect(build).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("createDeps", () => {
+  it("wires the config, the Blob store derived from it and the thumbnailer without any I/O", () => {
+    const deps = createDeps(fullEnv);
+    expect(deps.config.blobStoreId).toBe("teststore01");
+    expect(deps.store.url(`img_${"0".repeat(32)}`)).toBe(`${blobBaseUrl("teststore01")}/img/${"0".repeat(32)}`);
+    expect(typeof deps.thumbnailer.toWebp).toBe("function");
+  });
+
+  it("throws a ConfigError for an incomplete environment", () => {
+    expect(() => createDeps({})).toThrow(ConfigError);
   });
 });

@@ -1,3 +1,13 @@
+// Every configuration failure is a ConfigError. Its message names the offending
+// variable and never a value, so it is the only kind of error the server logs
+// verbatim while building its dependencies.
+export class ConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ConfigError";
+  }
+}
+
 export interface Config {
   openrouterApiKey: string;
   connectorSecret: string;
@@ -5,6 +15,9 @@ export interface Config {
   defaultModel: string;
   retentionDays: number;
   openrouterReferer: string;
+  blobToken: string;
+  // Lowercase DNS label of the public Blob store host (docs/design/0010-vercel-blob-storage.md).
+  blobStoreId: string;
 }
 
 const MIN_SECRET_LENGTH = 32;
@@ -15,7 +28,7 @@ type Env = Record<string, string | undefined>;
 
 function required(env: Env, name: string): string {
   const value = env[name]?.trim();
-  if (!value) throw new Error(`missing env: ${name}`);
+  if (!value) throw new ConfigError(`missing env: ${name}`);
   return value;
 }
 
@@ -24,7 +37,7 @@ function required(env: Env, name: string): string {
 // its value.
 function strongSecret(env: Env, name: string): string {
   const value = required(env, name);
-  if (value.length < MIN_SECRET_LENGTH) throw new Error(`weak secret: ${name}`);
+  if (value.length < MIN_SECRET_LENGTH) throw new ConfigError(`weak secret: ${name}`);
   return value;
 }
 
@@ -33,18 +46,43 @@ function retentionDays(raw: string | undefined): number {
   const trimmed = raw.trim();
   const days = Number(trimmed);
   if (!/^\d+$/.test(trimmed) || !Number.isSafeInteger(days) || days < 1) {
-    throw new Error("invalid env: RETENTION_DAYS");
+    throw new ConfigError("invalid env: RETENTION_DAYS");
   }
   return days;
 }
 
+const DNS_LABEL = /^[a-z0-9-]{1,63}$/;
+
+// The store id becomes part of every public URL, so it must be a single DNS
+// label: anything else could change the host the server vouches for.
+// BLOB_STORE_ID wins when set. Otherwise the id is the fourth `_`-separated
+// segment of the read-write token (`vercel_blob_rw_<storeId>_...`), the same
+// segment the Blob SDK reads. The SDK keeps the token's mixed case while the
+// hosts it returns are lowercase.
+function blobStoreId(env: Env, token: string): string {
+  const explicit = env.BLOB_STORE_ID?.trim();
+  const fromEnv = Boolean(explicit);
+  const raw = fromEnv ? explicit!.replace(/^store_/, "") : (token.split("_")[3] ?? "");
+  const id = raw.toLowerCase();
+  if (!DNS_LABEL.test(id)) {
+    throw new ConfigError(`invalid env: ${fromEnv ? "BLOB_STORE_ID" : "BLOB_READ_WRITE_TOKEN"}`);
+  }
+  return id;
+}
+
 export function loadConfig(env: Env): Config {
+  const openrouterApiKey = required(env, "OPENROUTER_API_KEY");
+  const connectorSecret = strongSecret(env, "CONNECTOR_SECRET");
+  const cronSecret = strongSecret(env, "CRON_SECRET");
+  const blobToken = required(env, "BLOB_READ_WRITE_TOKEN");
   return {
-    openrouterApiKey: required(env, "OPENROUTER_API_KEY"),
-    connectorSecret: strongSecret(env, "CONNECTOR_SECRET"),
-    cronSecret: strongSecret(env, "CRON_SECRET"),
+    openrouterApiKey,
+    connectorSecret,
+    cronSecret,
     defaultModel: env.DEFAULT_MODEL?.trim() || DEFAULT_MODEL,
     retentionDays: retentionDays(env.RETENTION_DAYS),
     openrouterReferer: env.OPENROUTER_REFERER?.trim() ?? "",
+    blobToken,
+    blobStoreId: blobStoreId(env, blobToken),
   };
 }
