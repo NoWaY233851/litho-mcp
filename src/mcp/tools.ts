@@ -8,6 +8,7 @@ import { sniffImage, type ImageInfo } from "../images/sniff.js";
 import { makeThumbnail } from "../images/thumbnail.js";
 import { MAX_IMAGE_BYTES, MAX_IMAGE_SIDE, PublicFetchError, fetchPublicImage } from "../net/public-fetch.js";
 import { createImage, getKeyInfo, type CreatedImage } from "../openrouter/client.js";
+import { formatCost } from "../openrouter/cost.js";
 import { OpenRouterError, describeOpenRouterError, isLimitError, truncate } from "../openrouter/errors.js";
 import {
   IMAGE_PARAMS,
@@ -17,7 +18,7 @@ import {
   type ImageModel,
   type ImageParams,
 } from "../openrouter/models.js";
-import { errorResult, formatCost, imageResult, textResult } from "./result.js";
+import { errorResult, imageResult, textResult } from "./result.js";
 
 // Which parameters a model really takes varies, so they are validated against the live
 // catalog rather than enumerated here (docs/design/0003-model-agnostic-openrouter.md).
@@ -155,16 +156,11 @@ export async function generateImage(deps: Deps, args: GenerateArgs): Promise<Cal
     if ("content" in resolved) return resolved;
     const { model, params } = resolved;
 
-    let created: CreatedImage;
-    try {
-      created = await createImage(
-        deps.config,
-        { model: model.id, prompt: args.prompt, params, references: [] },
-        deps.fetch,
-      );
-    } catch (e) {
-      return await failureResult(deps, e);
-    }
+    const created = await createImage(
+      deps.config,
+      { model: model.id, prompt: args.prompt, params, references: [] },
+      deps.fetch,
+    );
     return await saveAndShow(deps, created, {
       model: model.id,
       ...(params.aspect_ratio !== undefined ? { aspectRatio: params.aspect_ratio } : {}),
@@ -353,12 +349,7 @@ export async function editImage(deps: Deps, args: EditArgs, options: EditOptions
       return dataUrl;
     });
 
-    let created: CreatedImage;
-    try {
-      created = await createImage(deps.config, { model: model.id, prompt: args.prompt, params, references }, deps.fetch);
-    } catch (e) {
-      return await failureResult(deps, e);
-    }
+    const created = await createImage(deps.config, { model: model.id, prompt: args.prompt, params, references }, deps.fetch);
     const parent = refs.find((ref): ref is Extract<Reference, { kind: "id" }> => ref.kind === "id")?.id;
     return await saveAndShow(deps, created, {
       model: model.id,

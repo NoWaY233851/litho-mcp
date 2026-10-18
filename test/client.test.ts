@@ -211,6 +211,12 @@ describe("createImage failures after a 2xx", () => {
     expect(text).not.toMatch(/not charged/i);
   });
 
+  it("reports a sub-cent cost instead of rounding it to $0", async () => {
+    const { f } = recorder(() => json({ data: [], usage: { cost: 0.00002 } }));
+    const e = await failure(createImage(cfg, req(), f));
+    expect(describeOpenRouterError(e, null)).toMatch(/reported cost \$0\.00002\)/);
+  });
+
   it("carries usage.cost on unsupported_output (SVG media type)", async () => {
     const { f } = recorder(() =>
       json({ data: [{ b64_json: SVG_B64, media_type: "image/svg+xml" }], usage: { cost: 0.19 } }),

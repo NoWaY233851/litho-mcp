@@ -1,5 +1,6 @@
 import type { CallToolResult } from "@modelcontextprotocol/server";
 import type { ImageInfo } from "../images/sniff.js";
+import { formatCost } from "../openrouter/cost.js";
 
 export function errorResult(message: string): CallToolResult {
   return { isError: true, content: [{ type: "text", text: message }] };
@@ -8,10 +9,6 @@ export function errorResult(message: string): CallToolResult {
 export function textResult(text: string): CallToolResult {
   return { content: [{ type: "text", text }] };
 }
-
-// Six decimals keep sub-cent costs exact, and Number() drops trailing zeros without ever
-// printing an exponent at that precision.
-export const formatCost = (usd: number): string => `$${Number(usd.toFixed(6))}`;
 
 export interface ImageResultInput {
   id: string;

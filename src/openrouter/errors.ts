@@ -8,6 +8,8 @@
 // Text that comes from OpenRouter is cut to MAX_PASSTHROUGH characters. Nothing here logs, and
 // no message includes a header, a request body or the API key.
 
+import { formatCost } from "./cost.js";
+
 export interface KeyInfo {
   limit: number | null;
   limitRemaining: number | null;
@@ -84,9 +86,7 @@ const isModeration = (e: OpenRouterError): boolean => !!e.metadata && MODERATION
 
 const money = (n: number): string => `$${Number(n.toFixed(2))}`;
 
-// Sub-cent costs are common for cheap models, so keep four decimals here.
-const reported = (cost: number | null): string =>
-  cost === null ? "" : ` (reported cost $${Number(cost.toFixed(4))})`;
+const reported = (cost: number | null): string => (cost === null ? "" : ` (reported cost ${formatCost(cost)})`);
 
 function describeLimit(key: KeyInfo | null): string {
   const parts: string[] = [];
