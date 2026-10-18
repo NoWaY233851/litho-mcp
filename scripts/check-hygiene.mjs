@@ -21,6 +21,13 @@ const CONCRETE_BLOB_HOST = /[A-Za-z0-9-]\.public\.blob\.vercel-storage\.com/;
 // (the word "fake" or "test" anywhere in the match) are the convention for tests and docs.
 const BLOB_CREDENTIAL = /vercel_blob_rw_[A-Za-z0-9]+|\bstore_[A-Za-z0-9]{8,}/g;
 
+// An OpenRouter key, a Vercel project or team id written in prose, and a JWT (which is what a
+// Vercel OIDC token or a copied session token looks like). Same fake/test convention as above.
+const OPENROUTER_KEY = /sk-or-v1-[0-9a-f]{64}/g;
+const VERCEL_ID = /\b(prj|team)_[A-Za-z0-9]{16,}/g;
+const JWT = /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./g;
+const hasRealMatch = (line, pattern) => (line.match(pattern) ?? []).some((m) => !/fake|test/i.test(m));
+
 const rules = [
   { name: "home directory path", test: (l) => /\/Users\/[A-Za-z]|\/home\/[a-z]|C:\\Users\\[A-Za-z]/.test(l) },
   { name: "Cloudflare account id", test: (l) => /"account_id"\s*:/.test(l) },
@@ -35,13 +42,16 @@ const rules = [
   },
   {
     name: "blob credential",
-    test: (l) => (l.match(BLOB_CREDENTIAL) ?? []).some((m) => !/fake|test/i.test(m)),
+    test: (l) => hasRealMatch(l, BLOB_CREDENTIAL),
   },
+  { name: "OpenRouter key", test: (l) => hasRealMatch(l, OPENROUTER_KEY) },
+  { name: "Vercel id", test: (l) => hasRealMatch(l, VERCEL_ID) },
+  { name: "JWT", test: (l) => hasRealMatch(l, JWT) },
   {
     name: "email address",
     test: (l) => (l.match(EMAIL) ?? []).some((e) => !ALLOWED_EMAIL.test(e)),
   },
-  { name: "local working docs reference", test: (l) => /superpowers/i.test(l) },
+  { name: "excluded path reference", test: (l) => /superpowers/i.test(l) },
   // Tracked files cite ADRs in docs/design, not section numbers of other documents.
   { name: "spec section reference", test: (l) => /(^|[^a-z])spec ?[0-9§]/i.test(l) },
 ];

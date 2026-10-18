@@ -12,3 +12,5 @@
 !tsconfig.json
 !vite.config.ts
 !vercel.json
+# Environment files are never uploaded, including a stray one under public/, which is served as-is.
+.env*
