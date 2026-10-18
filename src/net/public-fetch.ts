@@ -1,4 +1,4 @@
-// Fetches a user-supplied image URL without letting it reach the function's own network (spec 5.6).
+// Fetches a user-supplied image URL without letting it reach the function's own network (ADR 0007).
 //
 // Vercel applies no outbound filtering, and the Lambda runtime API (127.0.0.1) and the cloud
 // metadata service (169.254.169.254) are reachable from inside the function. So the URL is
@@ -269,7 +269,7 @@ async function fetchFollowingRedirects(input: string, resolve: Resolve, httpGet:
 }
 
 /**
- * Downloads a public image. The format comes from the magic bytes only (spec 5.6): neither the
+ * Downloads a public image. The format comes from the magic bytes only (ADR 0007): neither the
  * Content-Type nor the file extension is consulted. One deadline covers DNS, every hop and the
  * body.
  */

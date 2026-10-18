@@ -1,4 +1,4 @@
-// OpenRouter image-model catalog and local parameter validation (spec 5.7).
+// OpenRouter image-model catalog and local parameter validation (ADR 0003).
 //
 // Every generate/edit call is checked against the live catalog before any paid request, so Claude
 // gets a short, precise message instead of an upstream rejection. The catalog comes from two

@@ -1,4 +1,4 @@
-// IP classification for the SSRF guard (spec 5.6). Addresses are parsed by hand rather than
+// IP classification for the SSRF guard (ADR 0007). Addresses are parsed by hand rather than
 // with node:net so the accepted syntax is exactly what is written here, and every input that
 // does not parse is treated as not public (fail closed).
 //

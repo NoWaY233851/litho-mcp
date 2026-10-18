@@ -1,4 +1,4 @@
-// OpenRouter failures and the short, honest messages Claude sees for them (spec 5.8).
+// OpenRouter failures and the short, honest messages Claude sees for them (ADR 0003).
 //
 // Billing claims are made only where OpenRouter documents them. Its image guide states that a
 // failed generation returns 502 and is not billed (https://openrouter.ai/docs/guides/overview/multimodal/image-generation);

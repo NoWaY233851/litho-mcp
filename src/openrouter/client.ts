@@ -22,7 +22,7 @@ import {
 export { OpenRouterError, describeOpenRouterError, type KeyInfo } from "./errors.js";
 
 const API_BASE = "https://openrouter.ai/api/v1";
-// Generation can take 94 s or more and there is no async mode (spec 3.4); Vercel allows 300 s.
+// Generation can take 94 s or more and there is no async mode; Vercel Hobby allows 300 s (ADR 0008).
 const GENERATE_TIMEOUT_MS = 200_000;
 const KEY_TIMEOUT_MS = 15_000;
 
