@@ -80,6 +80,8 @@ async function fetchJson(
   try {
     response = await f(`${API_BASE}${path}${query}`, {
       headers: { Authorization: `Bearer ${key}` },
+      // The catalog never redirects; refusing one keeps the key from following it anywhere.
+      redirect: "error",
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
   } catch (error) {

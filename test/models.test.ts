@@ -20,6 +20,7 @@ interface Call {
   url: string;
   headers: Headers;
   signal: AbortSignal | null | undefined;
+  redirect: RequestRedirect | undefined;
 }
 
 // Serves the fixtures and records what was asked, so tests can assert on URLs and headers without a network.
@@ -27,7 +28,7 @@ function fakeFetch(overrides: Record<string, () => Response> = {}) {
   const calls: Call[] = [];
   const f = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    calls.push({ url, headers: new Headers(init?.headers), signal: init?.signal });
+    calls.push({ url, headers: new Headers(init?.headers), signal: init?.signal, redirect: init?.redirect });
     const override = overrides[url];
     if (override) return override();
     if (url === CATALOG_URL) return new Response(catalog, { status: 200 });
@@ -92,6 +93,7 @@ describe("getImageModels", () => {
     for (const call of calls) {
       expect(call.headers.get("authorization")).toBe("Bearer test-openrouter-key");
       expect(call.signal).toBeInstanceOf(AbortSignal);
+      expect(call.redirect).toBe("error");
     }
   });
 
