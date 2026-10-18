@@ -31,6 +31,8 @@ const rules = [
     test: (l) => (l.match(EMAIL) ?? []).some((e) => !ALLOWED_EMAIL.test(e)),
   },
   { name: "local working docs reference", test: (l) => /superpowers/i.test(l) },
+  // The design spec is a local working doc. Tracked files cite ADRs (docs/design) instead.
+  { name: "spec section reference", test: (l) => /(^|[^a-z])spec ?[0-9§]/i.test(l) },
 ];
 
 // Tracked files plus untracked files that are not ignored, so a run before
