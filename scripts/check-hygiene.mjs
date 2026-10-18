@@ -11,8 +11,11 @@ const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 const ALLOWED_EMAIL = /@(users\.noreply\.github\.com|example\.com)$/i;
 const PLACEHOLDER = /<your-subdomain>\.workers\.dev/g;
 const PLACEHOLDER_PROJECT_HOST = /<project>\.vercel\.app/g;
-// A wildcard or a placeholder store id documents the URL shape without naming a store.
-const PLACEHOLDER_BLOB_HOST = /(\*|<store-id>)\.public\.blob\.vercel-storage\.com/g;
+// A concrete store host has a host-label character right before the suffix. The CSP wildcard,
+// the <store-id> placeholder and code that builds the host from a variable (a quoted suffix
+// constant, template interpolation) do not, so they document or derive the shape without
+// naming a store.
+const CONCRETE_BLOB_HOST = /[A-Za-z0-9-]\.public\.blob\.vercel-storage\.com/;
 
 const rules = [
   { name: "home directory path", test: (l) => /\/Users\/[A-Za-z]|\/home\/[a-z]|C:\\Users\\[A-Za-z]/.test(l) },
@@ -24,14 +27,14 @@ const rules = [
   { name: "vercel.app host", test: (l) => /\.vercel\.app/.test(l.replace(PLACEHOLDER_PROJECT_HOST, "")) },
   {
     name: "Blob store host",
-    test: (l) => /\.public\.blob\.vercel-storage\.com/.test(l.replace(PLACEHOLDER_BLOB_HOST, "")),
+    test: (l) => CONCRETE_BLOB_HOST.test(l),
   },
   {
     name: "email address",
     test: (l) => (l.match(EMAIL) ?? []).some((e) => !ALLOWED_EMAIL.test(e)),
   },
   { name: "local working docs reference", test: (l) => /superpowers/i.test(l) },
-  // The design spec is a local working doc. Tracked files cite ADRs (docs/design) instead.
+  // Tracked files cite ADRs in docs/design, not section numbers of other documents.
   { name: "spec section reference", test: (l) => /(^|[^a-z])spec ?[0-9§]/i.test(l) },
 ];
 
