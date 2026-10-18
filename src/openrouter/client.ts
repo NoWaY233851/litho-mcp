@@ -45,7 +45,9 @@ const isObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !
 
 /**
  * Runs one fetch and reads its whole body under a single deadline. A deadline hit surfaces as
- * `timedOut`; any other transport failure is rethrown as `network`.
+ * `timeout`. A failure before any response is `network_error`. A body that breaks after a 2xx
+ * is `response_interrupted`, because the provider had already accepted the request; after a
+ * non-2xx the status alone is still usable, so the body is treated as empty.
  */
 async function exchange(
   f: typeof fetch,
@@ -60,13 +62,22 @@ async function exchange(
     controller.abort();
   }, timeoutMs);
   try {
-    // Never follow a redirect with the Authorization header attached.
-    const res = await f(url, { ...init, redirect: "error", signal: controller.signal });
-    const text = await res.text();
-    return { status: res.status, ok: res.status >= 200 && res.status < 300, text };
-  } catch {
-    if (timedOut) throw new OpenRouterError(408, "timeout", "OpenRouter call timed out");
-    throw new OpenRouterError(502, "network_error", "OpenRouter could not be reached");
+    let res: Response;
+    try {
+      // Never follow a redirect with the Authorization header attached.
+      res = await f(url, { ...init, redirect: "error", signal: controller.signal });
+    } catch {
+      if (timedOut) throw new OpenRouterError(408, "timeout", "OpenRouter call timed out");
+      throw new OpenRouterError(502, "network_error", "OpenRouter could not be reached");
+    }
+    const ok = res.status >= 200 && res.status < 300;
+    try {
+      return { status: res.status, ok, text: await res.text() };
+    } catch {
+      if (timedOut) throw new OpenRouterError(408, "timeout", "OpenRouter call timed out");
+      if (!ok) return { status: res.status, ok, text: "" };
+      throw new OpenRouterError(res.status, "response_interrupted", "OpenRouter response was cut off");
+    }
   } finally {
     clearTimeout(timer);
   }
@@ -125,18 +136,24 @@ export async function createImage(
   const res = await exchange(f, `${API_BASE}/images`, { method: "POST", headers, body: JSON.stringify(body) }, timeoutMs);
   if (!res.ok) throw httpError(res.status, res.text);
 
-  const invalid = () => new OpenRouterError(res.status, "invalid_response", "OpenRouter returned an unreadable response");
   const parsed = parseJson(res.text);
+  // Read before any failure below: a 2xx that then fails here was probably billed.
+  const usage = isObj(parsed) ? parsed.usage : undefined;
+  const rawCost = isObj(usage) ? usage.cost : undefined;
+  const costUsd = typeof rawCost === "number" && Number.isFinite(rawCost) ? rawCost : null;
+  const invalid = () =>
+    new OpenRouterError(res.status, "invalid_response", "OpenRouter returned an unreadable response", undefined, costUsd);
   if (isObj(parsed) && isObj(parsed.error)) throw inBodyError(res.status, parsed.error);
   if (!isObj(parsed) || !Array.isArray(parsed.data)) throw invalid();
   if (parsed.data.length === 0) {
-    throw new OpenRouterError(res.status, "empty_response", "OpenRouter returned no image");
+    throw new OpenRouterError(res.status, "empty_response", "OpenRouter returned no image", undefined, costUsd);
   }
   // Only the first image is used: the tools always ask for one.
   const first: unknown = parsed.data[0];
   if (!isObj(first) || typeof first.b64_json !== "string") throw invalid();
 
-  const unsupported = () => new OpenRouterError(res.status, "unsupported_output", UNSUPPORTED_OUTPUT_MESSAGE);
+  const unsupported = () =>
+    new OpenRouterError(res.status, "unsupported_output", UNSUPPORTED_OUTPUT_MESSAGE, undefined, costUsd);
   if (typeof first.media_type === "string" && first.media_type.trim().toLowerCase() === "image/svg+xml") {
     throw unsupported();
   }
@@ -151,8 +168,7 @@ export async function createImage(
   const info = sniffImage(bytes);
   if (!info) throw unsupported();
 
-  const cost = isObj(parsed.usage) ? parsed.usage.cost : undefined;
-  return { bytes, info, costUsd: typeof cost === "number" && Number.isFinite(cost) ? cost : null };
+  return { bytes, info, costUsd };
 }
 
 const nullableNumber = (v: unknown): v is number | null => v === null || (typeof v === "number" && Number.isFinite(v));

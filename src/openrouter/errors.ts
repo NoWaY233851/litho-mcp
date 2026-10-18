@@ -14,18 +14,41 @@ export interface KeyInfo {
   limitReset: string | null;
 }
 
+// Upstream metadata is kept only for the keys this module reads. Content-policy errors carry
+// `raw` (provider output, which can echo the prompt) and other fields we never need, so they are
+// dropped at construction rather than carried around.
+const METADATA_KEYS = ["limit_source", "limit_usd", "provider_name", "reasons", "flagged_input"] as const;
+
+function pickMetadata(metadata: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!metadata) return undefined;
+  const kept: Record<string, unknown> = {};
+  for (const k of METADATA_KEYS) if (k in metadata) kept[k] = metadata[k];
+  return kept;
+}
+
+/**
+ * Callers must show `describeOpenRouterError(e, key)` and never branch on `status` alone: some
+ * codes reuse a status with different billing semantics. `network_error` is status 502 but, unlike
+ * a real 502, says nothing about whether the call was charged.
+ */
 export class OpenRouterError extends Error {
+  readonly metadata?: Record<string, unknown>;
+
   constructor(
     readonly status: number,
     // Always a string: the error body's code when it is a non-empty string, otherwise
     // "http_<status>", or one of the codes this module raises itself (timeout, network_error,
-    // invalid_response, empty_response, unsupported_output).
+    // response_interrupted, invalid_response, empty_response, unsupported_output).
     readonly code: string,
     message: string,
-    readonly metadata?: Record<string, unknown>,
+    metadata?: Record<string, unknown>,
+    // The cost OpenRouter reported on a 2xx that then failed locally. A 2xx means the provider
+    // accepted the request, and OpenRouter bills a generation all or nothing.
+    readonly costUsd: number | null = null,
   ) {
     super(message);
     this.name = "OpenRouterError";
+    this.metadata = pickMetadata(metadata);
   }
 }
 
@@ -41,7 +64,7 @@ export function truncate(text: string, max = MAX_PASSTHROUGH): string {
 }
 
 export const UNSUPPORTED_OUTPUT_MESSAGE =
-  "The model returned an image format that can't be used (for example SVG). Only PNG, JPEG and WebP are supported. Try a different model or output_format.";
+  "The model returned an image format that can't be used (for example SVG). Only PNG, JPEG and WebP are supported.";
 
 const LIMIT_SOURCES = new Set(["openrouter_credits", "openrouter_key_limit", "openrouter_in_flight_budget"]);
 
@@ -59,6 +82,10 @@ const MODERATION_KEYS = ["reasons", "flagged_input", "provider_name"];
 const isModeration = (e: OpenRouterError): boolean => !!e.metadata && MODERATION_KEYS.some((k) => k in e.metadata!);
 
 const money = (n: number): string => `$${Number(n.toFixed(2))}`;
+
+// Sub-cent costs are common for cheap models, so keep four decimals here.
+const reported = (cost: number | null): string =>
+  cost === null ? "" : ` (reported cost $${Number(cost.toFixed(4))})`;
 
 function describeLimit(key: KeyInfo | null): string {
   const parts: string[] = [];
@@ -93,12 +120,16 @@ export function describeOpenRouterError(e: OpenRouterError, key: KeyInfo | null)
       return "The OpenRouter call timed out after 200 s. The generation may still finish and be billed, so check OpenRouter activity before retrying.";
     case "network_error":
       return "Could not reach OpenRouter (network error). The call can be retried.";
+    case "response_interrupted":
+      return "The OpenRouter response was cut off after the request was accepted. The image may have been generated and billed, so check OpenRouter activity before retrying.";
+    // The four cases below follow a 2xx, which means the provider accepted the request. OpenRouter
+    // returns a non-completion as 502, so these are the possibly billed branch.
     case "invalid_response":
-      return "OpenRouter returned an unreadable response, which is not retryable as is. Check the model and parameters, or try a different model.";
+      return `OpenRouter returned an unreadable response, which is not retryable as is. The call may have been billed${reported(e.costUsd)}; check OpenRouter activity before trying another model.`;
     case "empty_response":
-      return "OpenRouter returned no image. Try again, or try a different model.";
+      return `OpenRouter accepted the request but returned no image. The call may have been billed${reported(e.costUsd)}. Change the prompt or the model before trying again.`;
     case "unsupported_output":
-      return UNSUPPORTED_OUTPUT_MESSAGE;
+      return `${UNSUPPORTED_OUTPUT_MESSAGE} The call may have been billed${reported(e.costUsd)}. Try a different model or output_format.`;
   }
   if (isLimitError(e)) return describeLimit(key);
   if (e.status === 403 && isModeration(e)) return describeModeration(e);

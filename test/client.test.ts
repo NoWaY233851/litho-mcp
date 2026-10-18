@@ -21,6 +21,7 @@ interface Call {
   headers: Record<string, string>;
   body: Record<string, unknown> | undefined;
   signal: AbortSignal | null | undefined;
+  redirect: RequestRedirect | undefined;
 }
 
 function recorder(respond: () => Response | Promise<Response>) {
@@ -32,6 +33,7 @@ function recorder(respond: () => Response | Promise<Response>) {
       headers: { ...(init?.headers as Record<string, string>) },
       body: typeof init?.body === "string" ? (JSON.parse(init.body) as Record<string, unknown>) : undefined,
       signal: init?.signal,
+      redirect: init?.redirect,
     });
     return respond();
   }) as typeof fetch;
@@ -192,6 +194,142 @@ describe("createImage response", () => {
     const e = await failure(createImage(cfg, req(), f));
     expect(e.code).toBe("invalid_response");
     expect(e.status).toBe(200);
+  });
+});
+
+describe("createImage failures after a 2xx", () => {
+  const costNote = /billed.*reported cost \$0\.19/i;
+
+  it("carries usage.cost on empty_response and says the call may have been billed", async () => {
+    const { f } = recorder(() => json({ data: [], usage: { cost: 0.19 } }));
+    const e = await failure(createImage(cfg, req(), f));
+    expect(e.code).toBe("empty_response");
+    expect(e.costUsd).toBe(0.19);
+    const text = describeOpenRouterError(e, null);
+    expect(text).toMatch(costNote);
+    expect(text).toMatch(/prompt or the model/i);
+    expect(text).not.toMatch(/not charged/i);
+  });
+
+  it("carries usage.cost on unsupported_output (SVG media type)", async () => {
+    const { f } = recorder(() =>
+      json({ data: [{ b64_json: SVG_B64, media_type: "image/svg+xml" }], usage: { cost: 0.19 } }),
+    );
+    const e = await failure(createImage(cfg, req(), f));
+    expect(e.code).toBe("unsupported_output");
+    expect(e.costUsd).toBe(0.19);
+    expect(describeOpenRouterError(e, null)).toMatch(costNote);
+  });
+
+  it("carries usage.cost on unsupported_output (sniff failure)", async () => {
+    const { f } = recorder(() => json({ data: [{ b64_json: SVG_B64 }], usage: { cost: 0.19 } }));
+    expect((await failure(createImage(cfg, req(), f))).costUsd).toBe(0.19);
+  });
+
+  it("carries usage.cost on invalid_response (bad base64)", async () => {
+    const { f } = recorder(() => json({ data: [{ b64_json: "not base64!!" }], usage: { cost: 0.19 } }));
+    const e = await failure(createImage(cfg, req(), f));
+    expect(e.code).toBe("invalid_response");
+    expect(e.costUsd).toBe(0.19);
+    expect(describeOpenRouterError(e, null)).toMatch(costNote);
+  });
+
+  it("says the call may have been billed even when no cost was reported", async () => {
+    const { f } = recorder(() => json({ data: [] }));
+    const e = await failure(createImage(cfg, req(), f));
+    expect(e.costUsd).toBeNull();
+    const text = describeOpenRouterError(e, null);
+    expect(text).toMatch(/may have been billed/);
+    expect(text).not.toMatch(/reported cost/);
+  });
+
+  it("ignores a cost that is not a finite number", async () => {
+    const { f } = recorder(() => json({ data: [], usage: { cost: "0.19" } }));
+    expect((await failure(createImage(cfg, req(), f))).costUsd).toBeNull();
+  });
+
+  it("reports response_interrupted when the body breaks after a 2xx", async () => {
+    const f = (() =>
+      Promise.resolve(
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.error(new Error(`socket closed ${KEY}`));
+            },
+          }),
+          { status: 200 },
+        ),
+      )) as typeof fetch;
+    const e = await failure(createImage(cfg, req(), f));
+    expect(e.status).toBe(200);
+    expect(e.code).toBe("response_interrupted");
+    expect(e.message).not.toContain(KEY);
+    expect(describeOpenRouterError(e, null)).toMatch(/may have been generated and billed.*check OpenRouter activity before retrying/i);
+  });
+
+  it("keeps network_error for a failure before any response", async () => {
+    const f = (() => Promise.reject(new TypeError("fetch failed"))) as typeof fetch;
+    expect((await failure(createImage(cfg, req(), f))).code).toBe("network_error");
+  });
+
+  it("falls back to the status when an error response body breaks", async () => {
+    const f = (() =>
+      Promise.resolve(
+        new Response(new ReadableStream({ start: (c) => c.error(new Error("reset")) }), { status: 502 }),
+      )) as typeof fetch;
+    const e = await failure(createImage(cfg, req(), f));
+    expect(e.status).toBe(502);
+    expect(e.code).toBe("http_502");
+  });
+});
+
+describe("redirect handling", () => {
+  it("never follows redirects, for generation and key lookups", async () => {
+    const gen = recorder(() => json(okBody()));
+    await createImage(cfg, req(), gen.f);
+    expect(gen.calls[0]!.redirect).toBe("error");
+    const key = recorder(() => json({ data: { limit: null, limit_remaining: null, limit_reset: null } }));
+    await getKeyInfo(cfg, key.f);
+    expect(key.calls[0]!.redirect).toBe("error");
+  });
+});
+
+describe("OpenRouterError metadata", () => {
+  it("keeps only the keys the messages use and drops raw provider output", async () => {
+    const { f } = recorder(() =>
+      json(
+        {
+          error: {
+            code: 403,
+            message: "flagged",
+            metadata: {
+              provider_name: "OpenAI",
+              reasons: ["violence"],
+              flagged_input: "text",
+              limit_source: "x",
+              limit_usd: 5,
+              raw: "the full prompt echoed back",
+              request_id: "abc",
+            },
+          },
+        },
+        403,
+      ),
+    );
+    const e = await failure(createImage(cfg, req(), f));
+    expect(e.metadata).toEqual({
+      provider_name: "OpenAI",
+      reasons: ["violence"],
+      flagged_input: "text",
+      limit_source: "x",
+      limit_usd: 5,
+    });
+    expect(JSON.stringify(e)).not.toContain("echoed");
+  });
+
+  it("drops unknown keys on direct construction too", () => {
+    expect(new OpenRouterError(403, "c", "m", { raw: "x", other: 1 }).metadata).toEqual({});
+    expect(new OpenRouterError(403, "c", "m").metadata).toBeUndefined();
   });
 });
 
@@ -457,15 +595,16 @@ describe("describeOpenRouterError", () => {
     expect(text).not.toMatch(/charged|billed/i);
   });
 
-  it("describes an unreadable response as not retryable, with no billing claim", () => {
+  it("describes an unreadable response as not retryable and possibly billed", () => {
     const text = describeOpenRouterError(new OpenRouterError(200, "invalid_response", "x"), null);
     expect(text).toMatch(/unreadable/i);
     expect(text).toMatch(/not retryable/i);
-    expect(text).not.toMatch(/charged|billed/i);
+    expect(text).toMatch(/may have been billed/i);
+    expect(text).not.toMatch(/not charged/i);
   });
 
   it("describes an empty response and unsupported output", () => {
-    expect(describeOpenRouterError(new OpenRouterError(200, "empty_response", "x"), null)).toMatch(/no image/i);
+    expect(describeOpenRouterError(new OpenRouterError(200, "empty_response", "x"), null)).toMatch(/no image.*billed/i);
     const text = describeOpenRouterError(new OpenRouterError(200, "unsupported_output", "x"), null);
     expect(text).toMatch(/SVG/);
     expect(text).toMatch(/PNG, JPEG and WebP/);
