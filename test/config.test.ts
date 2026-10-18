@@ -11,8 +11,8 @@ describe("loadConfig: Blob settings", () => {
   });
 
   it("D8: BLOB_STORE_ID wins over the token, with store_ stripped and the id lowercased", () => {
-    const config = loadConfig({ ...fullEnv, BLOB_STORE_ID: " store_EnvStore9 " });
-    expect(config.blobStoreId).toBe("envstore9");
+    const config = loadConfig({ ...fullEnv, BLOB_STORE_ID: " store_TestEnvStore9 " });
+    expect(config.blobStoreId).toBe("testenvstore9");
     expect(config.blobToken).toBe(fullEnv.BLOB_READ_WRITE_TOKEN);
     expect(loadConfig({ ...fullEnv, BLOB_STORE_ID: "plain-id" }).blobStoreId).toBe("plain-id");
   });
@@ -44,7 +44,7 @@ describe("loadConfig: Blob settings", () => {
       expect(error, id).toBeInstanceOf(ConfigError);
       expect((error as Error).message).toBe("invalid env: BLOB_STORE_ID");
     }
-    const badToken = `vercel_blob_rw_evil.example.test_fake`;
+    const badToken = `vercel_blob_rw_Test.example.test_fake`;
     const error = (() => {
       try {
         loadConfig({ ...withoutStoreId, BLOB_READ_WRITE_TOKEN: badToken });
@@ -53,14 +53,14 @@ describe("loadConfig: Blob settings", () => {
       }
     })();
     expect((error as Error).message).toBe("invalid env: BLOB_READ_WRITE_TOKEN");
-    expect((error as Error).message).not.toContain("evil");
+    expect((error as Error).message).not.toContain("example");
   });
 
   it("rejects hyphen edges and labels the URL parser cannot round-trip, without echoing the value", () => {
     for (const id of ["xn--abc", "-abc", "abc-", "-", "xn--a-b-c"]) {
       expect(() => loadConfig({ ...fullEnv, BLOB_STORE_ID: id }), id).toThrow(/^invalid env: BLOB_STORE_ID$/);
     }
-    expect(() => loadConfig({ ...fullEnv, BLOB_READ_WRITE_TOKEN: "vercel_blob_rw_xn--abc_fake" })).toThrow(
+    expect(() => loadConfig({ ...fullEnv, BLOB_READ_WRITE_TOKEN: "vercel_blob_rw_-abc_fake" })).toThrow(
       /^invalid env: BLOB_READ_WRITE_TOKEN$/,
     );
     expect(loadConfig({ ...fullEnv, BLOB_STORE_ID: "a-b-1" }).blobStoreId).toBe("a-b-1");

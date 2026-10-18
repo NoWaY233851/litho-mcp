@@ -17,6 +17,10 @@ const PLACEHOLDER_PROJECT_HOST = /<project>\.vercel\.app/g;
 // naming a store.
 const CONCRETE_BLOB_HOST = /[A-Za-z0-9-]\.public\.blob\.vercel-storage\.com/;
 
+// Real Blob credentials: a read-write token or a prefixed store id. Obviously fake values
+// (the word "fake" or "test" anywhere in the match) are the convention for tests and docs.
+const BLOB_CREDENTIAL = /vercel_blob_rw_[A-Za-z0-9]+|\bstore_[A-Za-z0-9]{8,}/g;
+
 const rules = [
   { name: "home directory path", test: (l) => /\/Users\/[A-Za-z]|\/home\/[a-z]|C:\\Users\\[A-Za-z]/.test(l) },
   { name: "Cloudflare account id", test: (l) => /"account_id"\s*:/.test(l) },
@@ -28,6 +32,10 @@ const rules = [
   {
     name: "Blob store host",
     test: (l) => CONCRETE_BLOB_HOST.test(l),
+  },
+  {
+    name: "blob credential",
+    test: (l) => (l.match(BLOB_CREDENTIAL) ?? []).some((m) => !/fake|test/i.test(m)),
   },
   {
     name: "email address",
