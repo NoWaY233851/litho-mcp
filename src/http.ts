@@ -31,9 +31,9 @@ async function cleanup(deps: Deps, log: (message: string) => void): Promise<Resp
 // (docs/design/0008-vercel-hobby.md), and a query parameter must never pick a
 // route. /mcp is gated for every method before anything else runs; a missing
 // and a wrong secret get the same response, with no WWW-Authenticate
-// (docs/design/0009-connector-secret-header.md). The cron route answers 404 on
-// any failure so its existence is not advertised. Auth failures and headers
-// are never logged.
+// (docs/design/0009-connector-secret-header.md). The function answers 404 for any
+// path or method it does not serve, and for the cron route when the secret is
+// wrong. Auth failures and headers are never logged.
 export async function handleRequest(
   req: Request,
   deps: Deps,

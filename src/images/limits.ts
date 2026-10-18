@@ -1,7 +1,10 @@
 // Size limits shared by modules that must not depend on each other: the public fetch pulls in
 // undici and node:dns, and the store pulls in the Blob SDK.
 
-/** Largest image accepted from an upload, a download or OpenRouter. */
+/**
+ * Largest image accepted from an upload or a download. Images OpenRouter generates are not
+ * capped: the call is already paid for, so refusing one would lose it.
+ */
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
 /**
