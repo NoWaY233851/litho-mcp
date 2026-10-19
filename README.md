@@ -82,13 +82,13 @@ All commands run from a clone of this repository. Check flags against `npx verce
    | `OPENROUTER_API_KEY` | yes | OpenRouter key used for all image requests. |
    | `CONNECTOR_SECRET` | yes | Secret claude.ai sends in the `Authorization` header. At least 32 characters. |
    | `CRON_SECRET` | yes | Secret Vercel Cron sends to the cleanup route. At least 32 characters. |
-   | `BLOB_READ_WRITE_TOKEN` | yes | Token for the Blob store (set in step 2). |
-   | `BLOB_STORE_ID` | no | Blob store id, with or without a `store_` prefix. Empty derives it from the token. |
+   | `BLOB_READ_WRITE_TOKEN` | one of the two | Read-write token for the store, written as a plain variable by the CLI path. When set, it is used for every Blob call. |
+   | `BLOB_STORE_ID` | one of the two | Store id, with or without a `store_` prefix. Required without a token, where the function uses the platform's OIDC token. With a token it is optional and overrides the id inside the token for the public base URL. |
    | `DEFAULT_MODEL` | no | Model used when a call names none. Empty uses the built-in default. |
    | `RETENTION_DAYS` | no | Days an image is kept. Empty means 30. |
    | `OPENROUTER_REFERER` | no | `HTTP-Referer` sent to OpenRouter. Empty sends none. |
 
-   A missing or weak required variable makes the server answer `500` with `server_misconfigured`. The log names the variable, never its value.
+   A missing or weak required variable, or neither Blob variable, makes the server answer `500` with `server_misconfigured`. The log names the variable, never its value.
 
 5. Deploy:
 
