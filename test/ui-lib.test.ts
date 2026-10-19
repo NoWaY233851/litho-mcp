@@ -92,6 +92,7 @@ describe("STRINGS", () => {
     "expired",
     "uploadFailed",
     "decodeFailed",
+    "replaceDelay",
   ] as const;
 
   it("has every key, non-empty, in both locales", () => {
@@ -104,6 +105,11 @@ describe("STRINGS", () => {
   it("explains an unreadable photo format in both locales", () => {
     expect(STRINGS.en.decodeFailed).toContain("JPEG, PNG or WebP");
     expect(STRINGS["zh-TW"].decodeFailed).toContain("JPEG、PNG 或 WebP");
+  });
+
+  it("says when a replaced photo can be used, in both locales", () => {
+    expect(STRINGS.en.replaceDelay).toBe("Claude can use the new photo in about a minute.");
+    expect(STRINGS["zh-TW"].replaceDelay).toBe("約一分鐘後 Claude 才能使用新照片。");
   });
 });
 

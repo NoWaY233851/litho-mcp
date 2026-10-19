@@ -40,6 +40,8 @@ type UploadView = {
   remoteSize?: { w: number; h: number };
   canvas?: HTMLCanvasElement;
   busy: boolean;
+  // True once this widget's upload overwrote a photo that was already shown.
+  replaced: boolean;
   failure?: Notice;
 };
 
@@ -158,6 +160,10 @@ function renderUpload(v: UploadView): Node[] {
   else if (shown) row.append(el("span", { className: "status", textContent: s.uploaded }));
   out.push(row);
 
+  if (v.replaced && v.phase === "local" && !v.busy) {
+    out.push(el("p", { className: "status", textContent: s.replaceDelay }));
+  }
+
   if (v.failure) {
     const note = el("div", { role: "alert" }, el("p", { className: "error", textContent: s[v.failure.key] }));
     if (v.failure.detail) note.append(el("p", { className: "detail", textContent: v.failure.detail }));
@@ -253,7 +259,10 @@ function patchUpload(v: UploadView, patch: Partial<UploadView>): UploadView {
 async function uploadPhoto(file: File): Promise<void> {
   const start = view;
   if (start.kind !== "upload" || start.busy) return;
-  const v = patchUpload(start, { busy: true, failure: undefined });
+  // An overwrite can take up to 60 s to reach the Blob CDN (docs/design/0010-vercel-blob-storage.md),
+  // so only a replacement gets the delay note; a first upload has nothing cached to replace.
+  const replaces = start.phase === "remote" || start.phase === "local";
+  const v = patchUpload(start, { busy: true, replaced: false, failure: undefined });
   const fail = (failure: Notice) => patchUpload(v, { busy: false, failure });
 
   let bitmap: ImageBitmap;
@@ -306,7 +315,15 @@ async function uploadPhoto(file: File): Promise<void> {
     fail({ key: "uploadFailed" });
     return;
   }
-  patchUpload(v, { busy: false, phase: "local", canvas, remoteSrc: undefined, remoteSize: undefined, failure: undefined });
+  patchUpload(v, {
+    busy: false,
+    replaced: replaces,
+    phase: "local",
+    canvas,
+    remoteSrc: undefined,
+    remoteSize: undefined,
+    failure: undefined,
+  });
 }
 
 fileInput.onchange = () => {
@@ -358,7 +375,7 @@ app.ontoolresult = (result) => {
   if (sc.kind === "image" && isImageResult(sc)) {
     setView({ kind: "image", image: sc as unknown as ImageResult, expired: false });
   } else if (sc.kind === "upload" && typeof sc.id === "string" && typeof sc.url === "string") {
-    const v: UploadView = { kind: "upload", id: sc.id, url: sc.url, phase: "probing", busy: false };
+    const v: UploadView = { kind: "upload", id: sc.id, url: sc.url, phase: "probing", busy: false, replaced: false };
     setView(v);
     probe(v);
   } else {
