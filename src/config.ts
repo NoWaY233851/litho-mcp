@@ -10,6 +10,12 @@ export class ConfigError extends Error {
   }
 }
 
+// How the Blob SDK is authenticated (docs/design/0010-vercel-blob-storage.md).
+// `token` is an explicit read-write token. `storeId` selects the OIDC path: the
+// SDK takes the platform's OIDC token from the request context on each call, so
+// no credential is held, resolved or validated here.
+export type BlobAuth = { token: string } | { storeId: string };
+
 export interface Config {
   openrouterApiKey: string;
   connectorSecret: string;
@@ -17,7 +23,7 @@ export interface Config {
   defaultModel: string;
   retentionDays: number;
   openrouterReferer: string;
-  blobToken: string;
+  blobAuth: BlobAuth;
   // Lowercase DNS label of the public Blob store host (docs/design/0010-vercel-blob-storage.md).
   blobStoreId: string;
 }
@@ -70,12 +76,13 @@ function isStoreHost(id: string): boolean {
 // label: anything else could change the host the server vouches for.
 // BLOB_STORE_ID wins when set. Otherwise the id is the fourth `_`-separated
 // segment of the read-write token (`vercel_blob_rw_<storeId>_...`), the same
-// segment the Blob SDK reads. The SDK keeps the token's mixed case while the
-// hosts it returns are lowercase.
-function blobStoreId(env: Env, token: string): string {
+// segment the Blob SDK reads. Without a token the id can only come from
+// BLOB_STORE_ID (docs/design/0010-vercel-blob-storage.md). The SDK keeps the
+// token's mixed case while the hosts it returns are lowercase.
+function blobStoreId(env: Env, token: string | undefined): string {
   const explicit = env.BLOB_STORE_ID?.trim();
   const fromEnv = Boolean(explicit);
-  const raw = fromEnv ? explicit!.replace(/^store_/, "") : (token.split("_")[3] ?? "");
+  const raw = fromEnv ? explicit!.replace(/^store_/, "") : ((token ?? "").split("_")[3] ?? "");
   const id = raw.toLowerCase();
   if (!DNS_LABEL.test(id) || !isStoreHost(id)) {
     throw new ConfigError(`invalid env: ${fromEnv ? "BLOB_STORE_ID" : "BLOB_READ_WRITE_TOKEN"}`);
@@ -83,11 +90,22 @@ function blobStoreId(env: Env, token: string): string {
   return id;
 }
 
+// An explicit token always wins: the SDK would otherwise prefer OIDC whenever
+// BLOB_STORE_ID is also set, silently changing which credential is used. With
+// neither variable the config fails closed.
+function blobAuth(env: Env): { auth: BlobAuth; token: string | undefined } {
+  const token = env.BLOB_READ_WRITE_TOKEN?.trim() || undefined;
+  if (token) return { auth: { token }, token };
+  const storeId = env.BLOB_STORE_ID?.trim();
+  if (storeId) return { auth: { storeId }, token: undefined };
+  throw new ConfigError("missing env: BLOB_READ_WRITE_TOKEN or BLOB_STORE_ID");
+}
+
 export function loadConfig(env: Env): Config {
   const openrouterApiKey = required(env, "OPENROUTER_API_KEY");
   const connectorSecret = strongSecret(env, "CONNECTOR_SECRET");
   const cronSecret = strongSecret(env, "CRON_SECRET");
-  const blobToken = required(env, "BLOB_READ_WRITE_TOKEN");
+  const blob = blobAuth(env);
   return {
     openrouterApiKey,
     connectorSecret,
@@ -95,7 +113,7 @@ export function loadConfig(env: Env): Config {
     defaultModel: env.DEFAULT_MODEL?.trim() || DEFAULT_MODEL,
     retentionDays: retentionDays(env.RETENTION_DAYS),
     openrouterReferer: env.OPENROUTER_REFERER?.trim() ?? "",
-    blobToken,
-    blobStoreId: blobStoreId(env, blobToken),
+    blobAuth: blob.auth,
+    blobStoreId: blobStoreId(env, blob.token),
   };
 }

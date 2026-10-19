@@ -1,5 +1,6 @@
 // The only module that imports @vercel/blob (docs/design/0008-vercel-hobby.md).
 import { del, list, put } from "@vercel/blob";
+import type { BlobAuth } from "../config.js";
 import { parseImageId, type ImageKind } from "./ids.js";
 import { MAX_STORED_READ_BYTES, STORED_TOO_LARGE_MESSAGE as TOO_LARGE } from "./limits.js";
 import { sniffImage, type ImageInfo } from "./sniff.js";
@@ -102,8 +103,12 @@ function urlScheme(baseUrl: string): Pick<ImageStore, "url" | "idFromUrl"> {
   };
 }
 
+// `auth` is spread into every SDK call. A token is passed explicitly because the
+// SDK prefers OIDC over the environment token whenever a store id is present;
+// with `{ storeId }` there is no token and the SDK resolves the platform's OIDC
+// token per call, inside the request (docs/design/0010-vercel-blob-storage.md).
 export function createBlobStore(
-  token: string,
+  auth: BlobAuth,
   baseUrl: string,
   fetchImpl: typeof fetch = (input, init) => globalThis.fetch(input, init),
 ): ImageStore {
@@ -126,7 +131,7 @@ export function createBlobStore(
           addRandomSuffix: false,
           allowOverwrite: replaceable,
           ...(replaceable ? { cacheControlMaxAge: UPLOAD_CACHE_SECONDS } : {}),
-          token,
+          ...auth,
         });
       } catch (error) {
         // The SDK has no dedicated error class for a pathname collision.
@@ -182,7 +187,7 @@ export function createBlobStore(
           // monthly allowance stops Blob for 30 days, so a misbehaving cursor
           // must end the run instead of looping until the function times out.
           if (pages >= MAX_LIST_PAGES) throw new Error("blob list exceeded page limit");
-          const page = await list({ prefix, cursor, token });
+          const page = await list({ prefix, cursor, ...auth });
           for (const blob of page.blobs) {
             const match = OBJECT_PATHNAME.exec(blob.pathname);
             if (match && blob.uploadedAt.getTime() < cutoffMs) {
@@ -200,7 +205,7 @@ export function createBlobStore(
 
     async delete(urls) {
       for (let i = 0; i < urls.length; i += DELETE_BATCH) {
-        await del(urls.slice(i, i + DELETE_BATCH), { token });
+        await del(urls.slice(i, i + DELETE_BATCH), { ...auth });
       }
     },
   };

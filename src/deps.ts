@@ -20,7 +20,7 @@ export function createDeps(env: Record<string, string | undefined>): Deps {
   const config = loadConfig(env);
   return {
     config,
-    store: createBlobStore(config.blobToken, blobBaseUrl(config.blobStoreId)),
+    store: createBlobStore(config.blobAuth, blobBaseUrl(config.blobStoreId)),
     thumbnailer: sharpThumbnailer,
     fetch: (input, init) => globalThis.fetch(input, init),
     now: () => Date.now(),

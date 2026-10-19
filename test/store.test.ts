@@ -105,7 +105,7 @@ describe("memory store", () => {
 
 describe("blob store", () => {
   const fetchMock = vi.fn<typeof fetch>();
-  const store = () => createBlobStore(TOKEN, BASE, fetchMock);
+  const store = () => createBlobStore({ token: TOKEN }, BASE, fetchMock);
 
   beforeEach(() => {
     vi.mocked(put).mockReset();
@@ -385,6 +385,28 @@ describe("blob store", () => {
     vi.mocked(list).mockImplementation((async () => ({ blobs: [], hasMore: true, cursor: `c${n++}` })) as never);
     await expect(store().listOlderThan(5_000)).rejects.toThrow("blob list exceeded page limit");
     expect(vi.mocked(list)).toHaveBeenCalledTimes(50);
+  });
+
+  it("OIDC auth passes storeId and no token to put, list and del", async () => {
+    const oidc = createBlobStore({ storeId: "store_TestStore01" }, BASE, fetchMock);
+    vi.mocked(put).mockResolvedValue(putResult(`${BASE}/up/${HEX}`));
+    vi.mocked(list).mockResolvedValue({ blobs: [], hasMore: false } as never);
+    vi.mocked(del).mockResolvedValue(undefined);
+
+    await oidc.put(UP, PNG_BYTES);
+    await oidc.listOlderThan(5_000);
+    await oidc.delete([`${BASE}/img/${HEX}`]);
+
+    const optionSets = [
+      vi.mocked(put).mock.calls[0]![2],
+      ...vi.mocked(list).mock.calls.map((c) => c[0]),
+      vi.mocked(del).mock.calls[0]![1],
+    ];
+    expect(optionSets).toHaveLength(4);
+    for (const opts of optionSets) {
+      expect(opts).toHaveProperty("storeId", "store_TestStore01");
+      expect(opts).not.toHaveProperty("token");
+    }
   });
 
   it("delete: no SDK call for an empty list; larger lists go in batches with the token", async () => {

@@ -5,15 +5,41 @@ import { fullEnv } from "./helpers.js";
 const withoutStoreId = { ...fullEnv, BLOB_STORE_ID: undefined };
 
 describe("loadConfig: Blob settings", () => {
-  it("requires BLOB_READ_WRITE_TOKEN", () => {
-    const { BLOB_READ_WRITE_TOKEN: _t, ...rest } = fullEnv;
-    expect(() => loadConfig(rest)).toThrow("missing env: BLOB_READ_WRITE_TOKEN");
+  const { BLOB_READ_WRITE_TOKEN: _t, ...withoutToken } = fullEnv;
+
+  it("requires BLOB_READ_WRITE_TOKEN or BLOB_STORE_ID", () => {
+    expect(() => loadConfig(withoutToken)).toThrow("missing env: BLOB_READ_WRITE_TOKEN or BLOB_STORE_ID");
+    expect(() => loadConfig({ ...withoutToken, BLOB_STORE_ID: "  " })).toThrow(
+      "missing env: BLOB_READ_WRITE_TOKEN or BLOB_STORE_ID",
+    );
+  });
+
+  it("prefers the token when both are set", () => {
+    const config = loadConfig({ ...fullEnv, BLOB_STORE_ID: "store_TestEnvStore9" });
+    expect(config.blobAuth).toEqual({ token: fullEnv.BLOB_READ_WRITE_TOKEN });
+  });
+
+  it("uses OIDC with only BLOB_STORE_ID", () => {
+    const config = loadConfig({ ...withoutToken, BLOB_STORE_ID: " store_TestEnvStore9 " });
+    expect(config.blobAuth).toEqual({ storeId: "store_TestEnvStore9" });
+    expect(config.blobStoreId).toBe("testenvstore9");
+  });
+
+  it("a whitespace-only token with BLOB_STORE_ID also gives the OIDC form", () => {
+    const config = loadConfig({ ...fullEnv, BLOB_READ_WRITE_TOKEN: "   ", BLOB_STORE_ID: "store_TestEnvStore9" });
+    expect(config.blobAuth).toEqual({ storeId: "store_TestEnvStore9" });
+  });
+
+  it("an invalid BLOB_STORE_ID without a token names the variable, not the value", () => {
+    for (const id of ["store_", "evil.example.test", "-abc"]) {
+      expect(() => loadConfig({ ...withoutToken, BLOB_STORE_ID: id }), id).toThrow(/^invalid env: BLOB_STORE_ID$/);
+    }
   });
 
   it("D8: BLOB_STORE_ID wins over the token, with store_ stripped and the id lowercased", () => {
     const config = loadConfig({ ...fullEnv, BLOB_STORE_ID: " store_TestEnvStore9 " });
     expect(config.blobStoreId).toBe("testenvstore9");
-    expect(config.blobToken).toBe(fullEnv.BLOB_READ_WRITE_TOKEN);
+    expect(config.blobAuth).toEqual({ token: fullEnv.BLOB_READ_WRITE_TOKEN });
     expect(loadConfig({ ...fullEnv, BLOB_STORE_ID: "plain-id" }).blobStoreId).toBe("plain-id");
   });
 
