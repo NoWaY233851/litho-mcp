@@ -42,7 +42,7 @@ Options considered for the in-chat layout:
 - It has no framework, and is bundled into a single HTML file with Vite and `vite-plugin-singlefile`.
 - It switches mode based on `structuredContent.kind`.
 - **Layout: image only.**
-  - Inline, the image fits inside a 480×480 CSS px box, keeping its aspect ratio and never upscaled. It is left-aligned, and the caption below follows its width. The upload preview follows the same rule.
+  - Inline, the image fits inside a 480×480 CSS px box, keeping its aspect ratio and never upscaled. It is left-aligned, or centered when the column is narrower than the box (phones), and the caption below follows its width. The upload preview follows the same rule.
   - The caption reads `model · aspect ratio · $cost`.
   - Tapping the image requests fullscreen.
   - No buttons and no version strip.
@@ -118,3 +118,4 @@ Tested on claude.ai web (macOS Safari), Claude desktop (macOS) and the Claude iO
 - The inline view never scrolls its own document. The host sizes the frame to the content, and a classic scrollbar narrowed the content, so the full-width image became shorter, the reported height was computed at the narrower width, and the scrollbar stayed (a white strip on web, a grey bar on desktop).
 - Text rows (caption, status, errors, buttons) are inset from the frame edge, because the host's rounded corners clipped the first character on iOS.
 - Outside fullscreen the widget has no background of its own. The host keeps the frame at the full column width, so a painted background showed as an empty panel beside the smaller image.
+- On phones the picture is centered instead of left-aligned. The iOS host draws its own card behind the transparent widget, so a portrait image narrower than the card left a strip of the card's background on one side; centering splits it evenly.

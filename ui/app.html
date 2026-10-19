@@ -32,6 +32,13 @@
       /* --fit-w comes from the picture's size, set per view. Pictures fill this column, so they
          keep their ratio, and the caption and buttons follow the same width. */
       html:not([data-mode="fullscreen"]) .content { max-width: var(--fit-w, none); }
+      /* The iOS host frames the widget in its own card, so a narrow portrait picture aligned left
+         leaves a one-sided strip of the card's background; centering splits it evenly. Wider
+         hosts stay left-aligned. 479px must stay just below INLINE_BOX_PX in ui/lib.ts
+         (ADR 0005). */
+      @media (max-width: 479px) {
+        html:not([data-mode="fullscreen"]) .content { margin-inline: auto; }
+      }
       /* iOS clips text that sits flush with the host's rounded frame corners. */
       html:not([data-mode="fullscreen"]) :is(.meta, .status, .error, .detail, .row) { padding-inline: 12px; }
       img, canvas { display: block; width: 100%; height: auto; border-radius: var(--border-radius-md, 6px); }
