@@ -41,6 +41,9 @@ describe.each(ERAS)("MCP endpoint, %s client", (_label, mode) => {
     const listUi = (byName.get("list_models")!._meta as { ui?: unknown } | undefined)?.ui;
     expect(listUi).toBeUndefined();
     expect(byName.get("generate_image")!.description).toContain("Images are kept for a limited time (30 days by default).");
+    expect(byName.get("generate_image")!.description).toMatch(
+      /^Generate a raster image, such as a photo, illustration, poster or card, from a text prompt using an OpenRouter image model\. Use it when the user asks to draw, generate or create an image or picture\./,
+    );
     await client.close();
   });
 

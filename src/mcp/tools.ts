@@ -36,7 +36,7 @@ export const GenerateArgs = z.object({
 export type GenerateArgs = z.infer<typeof GenerateArgs>;
 
 export const GENERATE_DESCRIPTION =
-  "Generate an image from a text prompt using an OpenRouter image model. The image is shown to the user inline; you receive a small preview, its id and a link to the original. To change it, call edit_image with the id. Call list_models to see other models and which parameters each supports. Images are kept for a limited time (30 days by default).";
+  "Generate a raster image, such as a photo, illustration, poster or card, from a text prompt using an OpenRouter image model. Use it when the user asks to draw, generate or create an image or picture. The image is shown to the user inline; you receive a small preview, its id and a link to the original. To change it, call edit_image with the id. Call list_models to see other models and which parameters each supports. Images are kept for a limited time (30 days by default).";
 
 export const LIST_MODELS_DESCRIPTION =
   "List OpenRouter image models: whether each can edit images, how many reference images it accepts, which of the parameters aspect_ratio, resolution, quality, background, output_format, output_compression and seed it supports (with allowed values), and pricing. Optional query filters by id or name.";
