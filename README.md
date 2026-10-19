@@ -35,24 +35,23 @@ All commands run from a clone of this repository. Check flags against `npx verce
 
    Plain `npx vercel link` also works and asks the questions interactively.
 
-2. Create a **public** Blob store. It holds the images, which are served straight from Blob URLs (see [ADR 0010](docs/design/0010-vercel-blob-storage.md)):
+2. Create a **public** Blob store. It holds the images, which are served straight from Blob URLs (see [ADR 0010](docs/design/0010-vercel-blob-storage.md)). The recommended path is the Vercel dashboard (labels as of 2026-10-19, they may drift):
+
+   1. In the Vercel dashboard, choose **Create Blob Store** and set the access to **Public**.
+   2. Connect the store to the project for Production and Preview.
+   3. Leave **Add a read-write token env var to this connection** unchecked.
+
+   Connecting adds `BLOB_STORE_ID` (and `BLOB_WEBHOOK_PUBLIC_KEY`, which the server does not use) but no token. The function then authenticates to Blob with the OIDC token Vercel attaches to each invocation, so the project holds no long-lived Blob secret. Cron invocations get the token too, so the daily cleanup works the same way.
+
+   The supported alternative is the CLI:
 
    ```
    npx vercel blob create-store <name> --access public --yes
    ```
 
-   With `--yes` the store is connected to Production, Preview and Development, and the CLI sets `BLOB_READ_WRITE_TOKEN` in all three as a plain (Config) variable. It does not set `BLOB_STORE_ID`. That is fine: the server derives the store id from the token.
+   With `--yes` the store is connected to Production, Preview and Development, and the CLI sets `BLOB_READ_WRITE_TOKEN` in all three as a plain (Config) variable. It does not set `BLOB_STORE_ID`; the server derives the store id from the token. This works, and its cost is that the token, which can write and delete every image, stays readable in the dashboard and through `npx vercel env pull`.
 
-   The token can write and delete every image, so the recommended setup is to store it as a Secret (write-only) variable (see [ADR 0010](docs/design/0010-vercel-blob-storage.md)). Vercel does not convert a saved variable in place, and variables created by an integration cannot be switched to Secret from the variables list. The documented route is:
-
-   1. Disconnect the store from the project in the Vercel dashboard.
-   2. Rotate the store's read-write token, so the value that was readable as a plain variable no longer works.
-   3. Reconnect the store to the project with Development deselected and Sensitive enabled.
-   4. Redeploy.
-
-   This route follows Vercel's documentation and has not yet been verified end to end. The acceptable fallback is to keep the plain variable the CLI created, which is the tested path and works. Its cost is that the token stays readable in the dashboard and through `npx vercel env pull`.
-
-   `BLOB_STORE_ID` is optional. When set, it takes precedence over the id inside the token when building the public image base URL. Connecting a store from the dashboard is documented to add `BLOB_STORE_ID` and an OIDC token; that path has not been tested.
+   When both are present, the token wins. To use OIDC after a CLI setup, remove `BLOB_READ_WRITE_TOKEN` and make sure `BLOB_STORE_ID` is set.
 
 3. Generate the two secrets. Each must be at least 32 characters; the server refuses to serve with a shorter one:
 
@@ -126,7 +125,7 @@ Before any generation, ask Claude to call `upload_image`, then pick any photo in
 If the widget reports that the photo could not be uploaded, the server answered "The photo could not be saved. Try uploading it again." and logged the cause in the deployment's Vercel log as `upload save failed: <reason>`. The reason is one of:
 
 - `blob base URL mismatch`: Blob accepted the write, but the URL it returned differs from the one the server derives from `BLOB_STORE_ID` or the token. Fix or remove `BLOB_STORE_ID`, redeploy and retry.
-- an error from the Blob SDK, such as an invalid or revoked token: check `BLOB_READ_WRITE_TOKEN`.
+- an error from the Blob SDK, such as an invalid or revoked token: check `BLOB_READ_WRITE_TOKEN`. Without a token, check that the store is connected to the project for the environment you are testing.
 
 If claude.ai reports a "Connection issue" saying the server asked for sign-in (status 401), the header value is wrong or missing.
 
@@ -169,6 +168,7 @@ Images are deleted `RETENTION_DAYS` days after creation (default 30). Cleanup is
 - Image links are capability URLs: the Blob store is public, and anyone holding a link can view that image. Links are unguessable and are not listed anywhere, but treat them like shared secrets. Images are deleted after the retention period.
 - Vercel Blob counts every download against the Hobby data-transfer quota, cache hits included: 10 GB a month (checked 2026-10-18 at <https://vercel.com/docs/vercel-blob/usage-and-pricing>, updated 2026-09-23). Going over pauses Blob access for up to 30 days, so a widely shared link can pause the deployment.
 - To revoke one leaked image, run `npx vercel blob del <url>` (flags checked against Vercel CLI 64.5.0; see the `--oidc-token` note under [Development](#development)). Because of CDN propagation, the image can stay reachable for up to about 60 seconds after deletion.
+- On OIDC the project holds no Blob secret. With `BLOB_READ_WRITE_TOKEN`, anyone who can read the project's variables can write and delete every image.
 - `CONNECTOR_SECRET` is a long-lived bearer secret. Anyone who has it can use your OpenRouter key through this server. It is compared in constant time, and a wrong and a missing secret get the same response.
 - There is no OAuth and no per-session sign-in. Rotation is manual (see above).
 - URLs passed to `edit_image` are fetched by the server behind SSRF checks (see [ADR 0007](docs/design/0007-reference-urls-ssrf.md)).

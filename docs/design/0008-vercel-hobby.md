@@ -58,8 +58,8 @@ The connector requirements behind [0001](0001-cloudflare-workers.md) still hold:
 - Moving back means writing R2 and Images-binding adapters and a Worker entry, not rewriting the core.
 
 **Configuration**
-- Encrypted environment variables: `OPENROUTER_API_KEY`, `CONNECTOR_SECRET` ([0009](0009-connector-secret-header.md)), `CRON_SECRET` ([0010](0010-vercel-blob-storage.md)), and `BLOB_READ_WRITE_TOKEN`. Creating the store from the CLI sets that token as a plain variable, so setup stores it as a Secret ([0010](0010-vercel-blob-storage.md)).
-- Plain environment variables: `DEFAULT_MODEL`, `RETENTION_DAYS`, `OPENROUTER_REFERER` (optional), and `BLOB_STORE_ID` (optional; when set, it takes precedence for the public Blob base URL, see [0010](0010-vercel-blob-storage.md)).
+- Encrypted environment variables: `OPENROUTER_API_KEY`, `CONNECTOR_SECRET` ([0009](0009-connector-secret-header.md)), `CRON_SECRET` ([0010](0010-vercel-blob-storage.md)), and, only if used, `BLOB_READ_WRITE_TOKEN` (encrypted). Without it the function authenticates to Blob with Vercel's OIDC token ([0010](0010-vercel-blob-storage.md)).
+- Plain environment variables: `DEFAULT_MODEL`, `RETENTION_DAYS`, `OPENROUTER_REFERER` (optional), and `BLOB_STORE_ID` (required when there is no token; with a token it is optional and takes precedence for the public Blob base URL, see [0010](0010-vercel-blob-storage.md)).
 - Only the production alias is registered as the connector, never a per-deployment URL.
 - `.vercel/` holds the project and org ids, so it is gitignored.
 

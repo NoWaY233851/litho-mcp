@@ -56,7 +56,7 @@ Moving to Vercel ([0008](0008-vercel-hobby.md)) removes R2, its lifecycle rules 
 
 **Public base URL**
 - The server needs the store's public base URL before anything is stored, because `upload_image` returns the URL a photo will get ([0006](0006-photo-uploads.md)).
-- The base URL is `https://<store-id>.public.blob.vercel-storage.com`. The store id comes from `BLOB_STORE_ID` (with a `store_` prefix removed) when set, and otherwise from `BLOB_READ_WRITE_TOKEN`. It is always lowercased. Configuration loading fails if neither yields one.
+- The base URL is `https://<store-id>.public.blob.vercel-storage.com`. The store id comes from `BLOB_STORE_ID` (with a `store_` prefix removed) when set, and otherwise from `BLOB_READ_WRITE_TOKEN`. Without a token it can only come from `BLOB_STORE_ID`. It is always lowercased. Configuration loading fails if neither yields one.
 - The token's store id is mixed case while hostnames returned by `put` are lowercase, so URL comparisons ignore host case.
 - Vercel doesn't document the token format. The derivation was checked against real `put` results. `BLOB_STORE_ID`, when set, takes precedence.
 
@@ -84,7 +84,7 @@ Moving to Vercel ([0008](0008-vercel-hobby.md)) removes R2, its lifecycle rules 
 - Anyone holding a link can view that image until it is deleted, and links can't be revoked early. The README says so.
 - The thumbnail budget relies on observed behavior above the documented result limit. If claude.ai starts enforcing that limit for image blocks, lower the budget; the step-down path already exists.
 - An edit started within about 60 seconds of replacing an uploaded photo may still read the previous photo, because overwrites can take up to 60 seconds to propagate and browsers cache the object for its cache lifetime. This is accepted.
-- `BLOB_READ_WRITE_TOKEN` can arrive as a plain (non-secret) environment variable when the store is created from the CLI, so setup must store it as a Secret. Connecting the store from the dashboard is documented to add `BLOB_STORE_ID` and an OIDC token instead; that path is untested.
+- Creating the store from the CLI leaves `BLOB_READ_WRITE_TOKEN` as a plain variable, readable in the dashboard and through `vercel env pull`. Connecting the store from the dashboard without the token box gives `BLOB_STORE_ID` only, and the project holds no Blob secret. The README recommends the dashboard path and keeps the CLI path as a supported alternative.
 - The way back to Cloudflare is an R2 `ImageStore` and an Images-binding `Thumbnailer` behind the same interfaces.
 
 ## Validation (2026-10-17, Vercel)
@@ -93,6 +93,26 @@ Tested on claude.ai web (macOS Safari), Claude desktop (macOS) and the Claude iO
 
 - **Widget images:** a public Blob URL loads in the widget `<img>` on all three platforms, so no `get_image_data` fallback is needed. The CSP wildcard is honored (web and desktop echo it in `hostCapabilities.sandbox.csp`; iOS doesn't report `sandbox` but loads the image). The exact store host also works. The wildcard is the decision.
 - **Thumbnail:** sharp 0.35.5 (libvips 8.18.7) loads in a plain Vercel Function, with a cold load of about 135-185 ms. A 1024 px WebP at quality 75 of a deliberately noisy 1536x1024 sample was 209,174 bytes, or 278,900 base64 characters, inside the 300,000 budget, and took 175-272 ms. The CPU of a whole generate-like request is in [0008](0008-vercel-hobby.md).
-- **Credentials:** creating the store with `vercel blob create-store <name> --access public --yes` set only `BLOB_READ_WRITE_TOKEN`, as a plain (non-secret) variable, in Production, Preview and Development. It set no `BLOB_STORE_ID`. Vercel's docs say connecting a store from the dashboard adds `BLOB_STORE_ID` and an OIDC token instead; that was not tested. The SDK resolves an explicit token first, then OIDC (which needs `BLOB_STORE_ID`), then `BLOB_READ_WRITE_TOKEN`.
+- **Credentials:** creating the store with `vercel blob create-store <name> --access public --yes` set only `BLOB_READ_WRITE_TOKEN`, as a plain (non-secret) variable, in Production, Preview and Development. It set no `BLOB_STORE_ID`. Connecting a store from the dashboard was tested later (see the OIDC validation below). The SDK resolves an explicit token first, then OIDC (which needs `BLOB_STORE_ID`), then `BLOB_READ_WRITE_TOKEN`.
 - **Base URL:** the rule under Public base URL above follows from these results. The token's store id is mixed case while hostnames returned by `put` are lowercase.
 - **Caching:** the Blob CDN ignores query strings in its cache key, and 404s aren't cached. Per Vercel's docs, overwrites and deletes can take up to 60 seconds to propagate through the CDN, and browsers keep their own copy for the object's cache lifetime (by default up to a month). Right after an upload or overwrite, probes of the same URL sometimes returned the previous object or a miss, while a cache-busting query always returned the current object in the browser. Hence the 60-second lifetime on `up/` objects and the widget's cache-busting query.
+
+## Revision (2026-10-19)
+
+The server accepts two Blob credential setups. When `BLOB_READ_WRITE_TOKEN` is set, it is passed explicitly to every SDK call. Otherwise `BLOB_STORE_ID` is passed, and the SDK uses the OIDC token Vercel attaches to the invocation, resolving it per call inside the request. If neither variable is set, configuration loading fails.
+
+- OIDC means the project holds no long-lived Blob secret, which removes the exposure of a plain-variable token.
+- The token is passed explicitly because the SDK prefers OIDC over the environment token whenever a store id is present. Without that, adding `BLOB_STORE_ID` to a deployment that has a token would silently change the credential in use.
+- Nothing may resolve or cache credentials at module load or outside a request, because the OIDC token exists only in the request context.
+
+## Validation (2026-10-19, OIDC)
+
+A throwaway Vercel Hobby project with a single plain `export default { fetch }` Node function (no framework, no `@vercel/functions` import) ran `@vercel/blob` 2.8.2 `put`, a plain GET of the returned URL, `list({ prefix })` and `del(url)` with no credential options.
+
+- **Store setup:** the store was created in the dashboard as public, with the default `BLOB` env var prefix and **Add a read-write token env var to this connection** unchecked. The dialog lists `BLOB_STORE_ID` and `BLOB_WEBHOOK_PUBLIC_KEY` as the variables added to Production and Preview, and `vercel env ls` showed only those two. There was no `BLOB_READ_WRITE_TOKEN` and no `VERCEL_OIDC_TOKEN`.
+- **Invocations:** results were identical for a manual request and for a cron invocation (`vercel crons run`). The request carried the `x-vercel-oidc-token` header. `process.env.VERCEL_OIDC_TOKEN` was not set at runtime, so the SDK can only get the token from the request context.
+- **Operations:** `put` succeeded, the GET of the returned URL returned 200 with the stored body, `list` found the object and `del` succeeded. The daily cleanup (`list` and `del`) therefore works on OIDC.
+- **Host rule:** the returned URL's host was the lowercased `BLOB_STORE_ID`, with any `store_` prefix removed, plus `.public.blob.vercel-storage.com`. The Public base URL rule is unchanged.
+- **Resolution order:** from the installed SDK source, an explicit `token` option comes first, then OIDC (store id from the `storeId` option or `BLOB_STORE_ID`), then `BLOB_READ_WRITE_TOKEN` from the environment.
+
+The dashboard labels above are as of 2026-10-19.
