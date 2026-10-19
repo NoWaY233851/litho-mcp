@@ -1,6 +1,6 @@
 # 0008. Host on Vercel Hobby as one Node function
 
-- Status: Accepted. Supersedes [0001](0001-cloudflare-workers.md). Validated on a Vercel deployment on 2026-10-17.
+- Status: Accepted. Supersedes [0001](0001-cloudflare-workers.md). Validated on a Vercel deployment on 2026-10-17 and in production acceptance on 2026-10-18 and 2026-10-19.
 - Date: 2026-10-17
 
 ## Context
@@ -96,3 +96,12 @@ Tested with throwaway deployments on Node 24 (linux x64), from claude.ai web (ma
 ## Revision (2026-10-19)
 
 - Clients on the 2026-07-28 protocol open a `subscriptions/listen` stream on connect. With list changes advertised, which is the SDK default, that stream stayed open until the 300 s limit, so each connected client produced a timed-out `POST /mcp` about every 5 minutes. The server now advertises `listChanged: false` for tools and resources, because neither changes within a deployment, and the stream ends right after its acknowledgement.
+
+## Validation (2026-10-18 and 2026-10-19, acceptance)
+
+The reviewed code was deployed to a production Hobby project by following the README, and re-tested on 2026-10-19 after fixes.
+
+- **Deploy steps:** project create and link, a public store created with the CLI, app secrets on stdin to Production only, and `vercel --prod` all worked.
+- **Configuration:** an unauthenticated `POST /mcp` to the production domain answered `401` with `{"error":"unauthorized"}` and no `WWW-Authenticate`. The server builds its configuration before checking the secret, so this also shows the configuration loaded.
+- **Deploy URLs:** `vercel --prod` prints a `Production:` URL, which is the single deployment's URL behind deployment protection (a POST answered `302`), and an `Aliased:` URL, which is the production domain. The README says to use the Aliased URL.
+- **Function timeouts:** on 2026-10-18 the runtime log showed `POST /mcp` requests ending with "Task timed out after 300 seconds". On 2026-10-19 this happened once per client connect and about every 5 minutes while a client stayed connected, all recorded with status 200. The cause and fix are in the 2026-10-19 revision. After the fix was deployed, no timeouts appeared for the rest of the day across web, desktop and iOS sessions, and clients did not reopen listen streams in a loop (no request bursts after a connect).

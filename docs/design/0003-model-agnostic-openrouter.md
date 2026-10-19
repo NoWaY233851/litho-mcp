@@ -1,6 +1,6 @@
 # 0003. Model-agnostic via the OpenRouter Image API
 
-- Status: Accepted. Revised on 2026-10-18 for billing-accurate error messages.
+- Status: Accepted. Revised on 2026-10-18 for billing-accurate error messages. Costs observed in acceptance on 2026-10-18 and 2026-10-19.
 - Date: 2026-10-16
 
 ## Context
@@ -106,3 +106,10 @@ Remaining spend is available from `GET /api/v1/key`.
 - OpenRouter sends a 200 as soon as the provider accepts the request, so generation errors can arrive inside a 200 body, and prompt processing may still be charged ([errors and debugging](https://openrouter.ai/docs/api/reference/errors-and-debugging), checked 2026-10-18). Failures after a 2xx therefore warn that the call may have been billed.
 - No billing statement covers 408, 504, 524, 529 or a client-side timeout, so those messages make no claim, and the timeout message tells Claude to check OpenRouter activity before retrying.
 - A 403 is treated as moderation only when it carries moderation metadata, so permission and guardrail errors are no longer mislabelled.
+
+## Validation (2026-10-18 and 2026-10-19, acceptance)
+
+Costs observed with the default model on the production deployment.
+
+- Generations cost $0.005 to $0.019 and edits $0.015 to $0.071. The highest was a text replacement on a larger image.
+- A 2:3 recipe card cost $0.043.

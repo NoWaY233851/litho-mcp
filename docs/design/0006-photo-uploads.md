@@ -1,6 +1,6 @@
 # 0006. Upload photos through the widget
 
-- Status: Accepted. Revised on 2026-10-16 after platform validation on web and iOS, on 2026-10-17 for the move to Vercel, and on 2026-10-18 for the upload size ladder. Validated on web, desktop and iOS; Android is untested.
+- Status: Accepted. Revised on 2026-10-16 after platform validation on web and iOS, on 2026-10-17 for the move to Vercel, and on 2026-10-18 for the upload size ladder. Validated on web, desktop and iOS, including in acceptance on 2026-10-18 and 2026-10-19; Android is untested.
 - Date: 2026-10-16
 
 ## Context
@@ -90,6 +90,18 @@ Tested on claude.ai web (macOS Safari), Claude desktop (macOS) and the Claude iO
 - **Undecodable formats:** iOS converts HEIC to JPEG when picked and decodes ProRAW DNG. The desktop app (Chromium) can't decode DNG ("The source image could not be decoded") and probably not HEIC, and its file dialog offered the DNG despite the `accept` list. The widget therefore reports undecodable formats clearly and suggests JPEG, PNG or WebP.
 - **Native file input:** on iOS its own thumbnail is black for some photos while the widget's canvas preview is correct, so the widget hides the native input behind its own button.
 - **Android:** not tested (no device), including the Android WebView file picker.
+
+## Validation (2026-10-18 and 2026-10-19, acceptance)
+
+Tested on the production deployment from claude.ai web (macOS, Chrome), Claude desktop (macOS) and the Claude iOS app. The first test was `upload_image` and picking a photo, which costs nothing.
+
+- **Upload:** picking a photo in the widget works on all three. On iOS the button opens the photo library and the preview is not black, and portrait photos upload upright.
+- **Undecodable format:** on desktop, a DNG shows "This device can't read this photo's format. Choose a JPEG, PNG or WebP, or export the photo first."
+- **Size ladder:** a detail-rich 48 MP iPhone photo uploaded, which exercises the step-down.
+- **Replace photo:** the new photo displays at once, and an edit requested later used it. The delay of about a minute is the CDN propagation described in the 2026-10-17 revision.
+- **Replace note (fixed 2026-10-19):** the widget did not mention that delay. After a successful replacement it now shows "Claude can use the new photo in about a minute." (zh-TW: 「約一分鐘後 Claude 才能使用新照片。」). A first upload shows no note. Verified on web (English) and iOS (zh-TW).
+- **Upload then edit:** `edit_image` with the `up_` id worked on all three on 2026-10-18, and again on 2026-10-19 on the final deployment.
+- **Android:** not tested (no device).
 
 ## Consequences
 

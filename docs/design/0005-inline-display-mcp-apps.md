@@ -1,6 +1,6 @@
 # 0005. Show images inline with an MCP Apps widget
 
-- Status: Accepted. Validated on claude.ai web and iOS on 2026-10-16, and on web, desktop and iOS with Blob-hosted images on 2026-10-17; Android is untested. Revised on 2026-10-17 for Blob-hosted images and host theming.
+- Status: Accepted. Validated on claude.ai web and iOS on 2026-10-16, and on web, desktop and iOS with Blob-hosted images on 2026-10-17 and in acceptance on 2026-10-18 and 2026-10-19; Android is untested. Revised on 2026-10-17 for Blob-hosted images and host theming.
 - Date: 2026-10-16
 
 ## Context
@@ -94,6 +94,24 @@ Tested on claude.ai web (macOS Safari), Claude desktop (macOS) and the Claude iO
 - **Theming:** the widget stayed readable in light (iOS) and dark (web, desktop) themes using the host's style variables.
 - **Sandbox origin:** `https://<32 hex>.claudemcpcontent.com`, different for each conversation. claude.ai re-reads the UI resource once per new conversation.
 - **Android:** not tested (no device). Mobile degradation as described under Platform failures applies if it fails there.
+
+## Validation (2026-10-18 and 2026-10-19, acceptance)
+
+Tested on the production deployment from claude.ai web (macOS, Chrome), Claude desktop (macOS) and the Claude iOS app. Fixes from the first run were deployed and re-tested on 2026-10-19.
+
+- **Inline display:** images render inline on all three, captioned `model · aspect ratio · $cost`. Per-image costs with `openai/gpt-image-2.5-flare` were $0.005 to $0.023 for generations and edits.
+- **Fullscreen:** a tap opens it on all three, and was re-verified after the fixes below. On iOS the content stays clear of the top bar and composer.
+- **Theming and locale:** web (dark) and desktop (dark and light) are readable. iOS, whose locale is zh-TW, shows the Traditional Chinese copy.
+- **Desktop:** in the image context menu only Copy Image Address works.
+- **Problems found and fixed** (the changes are in the 2026-10-19 revision), each re-verified on 2026-10-19:
+  - a white strip on web and a grey scrollbar on desktop at the right edge (web and desktop);
+  - a full-width inline image that was too large; with the 480×480 box, 2:3 renders at about 320×480 and 3:2 at about 480×320 (all three);
+  - the caption's first character clipped on iOS (iOS);
+  - a grey panel beside the smaller image, found during the re-test (web in dark and light, desktop);
+  - a one-sided strip of the host's card on iOS for portrait images, found during the re-test (iOS).
+- **Swipes on iOS:** a swipe starting on the image did not scroll the chat at first. After the first two fixes above it does, with no change specific to it.
+- **Tool routing:** in new chats that did not name the tool, "draw a recipe card" made Claude use claude.ai's own design tools, once by drawing the card itself and once with Claude Design. "Generate an image of a recipe card" called `generate_image`. The tool description now opens with when to use it, and the README tells users to name the connector or ask for an image.
+- **Android:** not tested (no device).
 
 ## Consequences
 

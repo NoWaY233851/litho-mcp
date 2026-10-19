@@ -131,7 +131,7 @@ If claude.ai reports a "Connection issue" saying the server asked for sign-in (s
 
 ### Using it
 
-claude.ai has its own ways to make visuals, and it may use them for a request such as "draw a recipe card". The first time in a conversation, name the connector, for example "use litho-mcp to generate a recipe card". Once litho-mcp has been used in a conversation, Claude keeps using it there.
+claude.ai has its own ways to make visuals, and it may use them for a request such as "draw a recipe card". The first time in a conversation, name the connector, for example "use litho-mcp to generate a recipe card", or ask explicitly for an image, for example "generate an image of a recipe card". Once litho-mcp has been used in a conversation, Claude keeps using it there.
 
 ## Rotate the secret
 

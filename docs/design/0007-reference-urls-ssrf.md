@@ -1,6 +1,6 @@
 # 0007. Fetch reference URLs ourselves, behind SSRF checks
 
-- Status: Accepted. Revised on 2026-10-17 for Node on Vercel ([0008](0008-vercel-hobby.md)).
+- Status: Accepted. Revised on 2026-10-17 for Node on Vercel ([0008](0008-vercel-hobby.md)). Validated on web in acceptance on 2026-10-18 and 2026-10-19.
 - Date: 2026-10-16
 
 ## Context
@@ -78,3 +78,10 @@ So the DNS checks used DNS over HTTPS through Cloudflare's resolver, and DNS reb
 - Blocking loopback matters more than before, because a Vercel function has a runtime API on 127.0.0.1.
 - "This server's own image URL" now means this deployment's Blob store URL, not `<origin>/img/<id>`.
 - The Workers-specific context moved to the historical note above.
+
+## Validation (2026-10-18 and 2026-10-19, acceptance)
+
+Tested on the production deployment from claude.ai web.
+
+- **Public URL:** `edit_image` with a public reference URL worked. The URL first given was a Wikimedia file description page, so Claude found the original file's URL and passed that.
+- **Own Blob URL:** `edit_image` with the image's own Blob URL instead of its id also worked, because the server maps its own Blob URLs back to the stored image.

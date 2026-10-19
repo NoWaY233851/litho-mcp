@@ -1,6 +1,6 @@
 # 0009. Authenticate with a connector secret in a request header
 
-- Status: Accepted. Supersedes [0002](0002-single-user-owner-password-oauth.md). Validated on web, desktop and iOS on 2026-10-17.
+- Status: Accepted. Supersedes [0002](0002-single-user-owner-password-oauth.md). Validated on web, desktop and iOS on 2026-10-17, and in production acceptance on 2026-10-18 and 2026-10-19.
 - Date: 2026-10-17
 
 ## Context
@@ -84,3 +84,11 @@ Tested on claude.ai web (macOS Safari), Claude desktop (macOS) and the Claude iO
 - **Response `403`:** no OAuth lookup, but the add dialog shows "Couldn't check the server - Couldn't determine how this server signs in" and requires "Continue anyway". After that, a correct secret works.
 - **Wrong or missing secret, either status:** claude.ai shows "Connection issue" messages, including one saying the connector was set up as not requiring sign-in but the server asked for sign-in (status 401 or 403), and retries `initialize` before giving up. A misconfigured connector is therefore visible to the user.
 - **Decision:** `401` with no `WWW-Authenticate` and a generic JSON body.
+
+## Validation (2026-10-18 and 2026-10-19, acceptance)
+
+Tested on the production deployment from claude.ai web, Claude desktop and the Claude iOS app.
+
+- **Adding the connector:** with No sign-in and an `Authorization: Bearer <secret>` request header, the add completed directly, with no "Continue anyway" step. claude.ai shows a warning when No sign-in is chosen.
+- **Request log during the add:** a header-less `POST /mcp` answered `401` (user agent python-httpx), and three `/.well-known/oauth-*` requests got Vercel's static `404`.
+- **Rotation:** after the secret was replaced and the project redeployed, the old connector's calls got `401` and claude.ai showed "This connector's stored credential was rejected". Removing the connector and adding it again with the new value restored service, and `list_models` listed 61 models.

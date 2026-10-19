@@ -1,6 +1,6 @@
 # 0010. Store images in a public Vercel Blob store; delete after 30 days
 
-- Status: Accepted. Supersedes [0004](0004-image-storage-and-delivery.md). Validated on web, desktop and iOS on 2026-10-17.
+- Status: Accepted. Supersedes [0004](0004-image-storage-and-delivery.md). Validated on web, desktop and iOS on 2026-10-17, with OIDC credentials on 2026-10-19 and in production acceptance on 2026-10-18 and 2026-10-19.
 - Date: 2026-10-17
 
 ## Context
@@ -116,3 +116,8 @@ A throwaway Vercel Hobby project with a single plain `export default { fetch }` 
 - **Resolution order:** from the installed SDK source, an explicit `token` option comes first, then OIDC (store id from the `storeId` option or `BLOB_STORE_ID`), then `BLOB_READ_WRITE_TOKEN` from the environment.
 
 The dashboard labels above are as of 2026-10-19.
+
+## Validation (2026-10-18 and 2026-10-19, acceptance)
+
+- **Cleanup cron:** it ran on 2026-10-19 at 03:02 UTC. The request was `200` from `vercel-cron/1.0`, and the runtime log line was `cleanup deleted 0`.
+- **Token setup:** the final deployment kept `BLOB_READ_WRITE_TOKEN`. A manually triggered cleanup (`vercel crons run /cron/cleanup`) logged `cleanup deleted 0`, uploads and edits worked, and there were no Blob errors. The OIDC setup is covered by the validation above.
