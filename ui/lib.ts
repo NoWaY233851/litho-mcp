@@ -10,6 +10,18 @@ export function fitWithin(w: number, h: number, max: number): { w: number; h: nu
   return { w: Math.max(1, Math.round(w * scale)), h: Math.max(1, Math.round(h * scale)) };
 }
 
+/** Edge of the square box an inline image is fitted into, in CSS px (ADR 0005). */
+export const INLINE_BOX_PX = 480;
+
+/**
+ * The size an image gets inline: inside the box, aspect ratio kept, never upscaled. A full-width
+ * image was about 1100 px tall for a 2:3 picture on web, so inline height is bounded here and
+ * the host's auto-resize follows the content (ADR 0005).
+ */
+export function inlineSize(w: number, h: number): { w: number; h: number } {
+  return fitWithin(w, h, INLINE_BOX_PX);
+}
+
 /** "model · aspect ratio · $cost", with the aspect ratio falling back to W×H. */
 export function formatMeta(sc: {
   model: string;

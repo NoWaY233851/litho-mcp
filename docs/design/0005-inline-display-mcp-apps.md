@@ -42,8 +42,8 @@ Options considered for the in-chat layout:
 - It has no framework, and is bundled into a single HTML file with Vite and `vite-plugin-singlefile`.
 - It switches mode based on `structuredContent.kind`.
 - **Layout: image only.**
-  - The image fills the width.
-  - A small caption below reads `model · aspect ratio · $cost`.
+  - Inline, the image fits inside a 480×480 CSS px box, keeping its aspect ratio and never upscaled. It is left-aligned, and the caption below follows its width. The upload preview follows the same rule.
+  - The caption reads `model · aspect ratio · $cost`.
   - Tapping the image requests fullscreen.
   - No buttons and no version strip.
 - While a generation is running, it shows "Generating…" and the elapsed seconds. Generation often takes 30–90 seconds.
@@ -111,3 +111,9 @@ Tested on claude.ai web (macOS Safari), Claude desktop (macOS) and the Claude iO
 ## Revision (2026-10-18)
 
 - Simplified Chinese locales (zh-CN, zh-SG, zh-Hans and bare zh) now get English instead of Traditional Chinese.
+
+## Revision (2026-10-19)
+
+- The full-width inline image was too tall: a 2:3 image was about 1100 px high on web. Inline images now fit a 480×480 CSS px box (see Decision). Fullscreen is unchanged.
+- The inline view never scrolls its own document. The host sizes the frame to the content, and a classic scrollbar narrowed the content, so the full-width image became shorter, the reported height was computed at the narrower width, and the scrollbar stayed (a white strip on web, a grey bar on desktop).
+- Text rows (caption, status, errors, buttons) are inset from the frame edge, because the host's rounded corners clipped the first character on iOS.

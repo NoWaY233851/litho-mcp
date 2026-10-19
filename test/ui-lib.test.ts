@@ -1,14 +1,31 @@
 import { describe, expect, it } from "vitest";
 import {
+  INLINE_BOX_PX,
   MAX_UPLOAD_BASE64_CHARS,
   STRINGS,
   UPLOAD_ENCODE_LADDER,
   bytesToBase64,
   fitWithin,
   formatMeta,
+  inlineSize,
   pickLocale,
   withCacheBuster,
 } from "../ui/lib.js";
+
+describe("inlineSize", () => {
+  it("fits portrait, landscape and square images in the 480 px box", () => {
+    expect(INLINE_BOX_PX).toBe(480);
+    expect(inlineSize(1024, 1536)).toEqual({ w: 320, h: 480 });
+    expect(inlineSize(1536, 1024)).toEqual({ w: 480, h: 320 });
+    expect(inlineSize(2048, 2048)).toEqual({ w: 480, h: 480 });
+  });
+  it("never upscales a small image", () => {
+    expect(inlineSize(256, 128)).toEqual({ w: 256, h: 128 });
+  });
+  it("never shrinks a thin side to zero", () => {
+    expect(inlineSize(4000, 2)).toEqual({ w: 480, h: 1 });
+  });
+});
 
 describe("fitWithin", () => {
   it("keeps aspect and never upscales", () => {

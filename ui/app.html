@@ -16,7 +16,18 @@
         color: var(--color-text-primary, CanvasText);
         background: var(--color-background-primary, Canvas);
       }
-      #app { padding: 0; }
+      #app { padding: 0 0 8px; }
+      /* The host sizes the frame to the content (auto-resize), so an inline view never needs to
+         scroll. A classic scrollbar would narrow the content and leave the reported height
+         computed at the wrong width (ADR 0005). Keyed on "not fullscreen" so it also holds
+         before the host context arrives. */
+      html:not([data-mode="fullscreen"]),
+      html:not([data-mode="fullscreen"]) body { overflow: hidden; }
+      /* --fit-w comes from the picture's size, set per view. Pictures fill this column, so they
+         keep their ratio, and the caption and buttons follow the same width. */
+      html:not([data-mode="fullscreen"]) .content { max-width: var(--fit-w, none); }
+      /* iOS clips text that sits flush with the host's rounded frame corners. */
+      html:not([data-mode="fullscreen"]) :is(.meta, .status, .error, .detail, .row) { padding-inline: 12px; }
       img, canvas { display: block; width: 100%; height: auto; border-radius: var(--border-radius-md, 6px); }
       img.zoomable { cursor: zoom-in; }
       /* The padding is set from the host's safe-area insets, which cover the overlaid top bar

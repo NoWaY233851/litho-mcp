@@ -10,6 +10,7 @@ import {
   bytesToBase64,
   fitWithin,
   formatMeta,
+  inlineSize,
   pickLocale,
   withCacheBuster,
 } from "./lib.js";
@@ -35,6 +36,8 @@ type UploadView = {
   url: string;
   phase: "probing" | "empty" | "remote" | "local";
   remoteSrc?: string;
+  // Natural size of the stored photo, read by the probe so the layout box is known before paint.
+  remoteSize?: { w: number; h: number };
   canvas?: HTMLCanvasElement;
   busy: boolean;
   failure?: Notice;
@@ -51,6 +54,7 @@ const app = new App({ name: "litho-widget", version: "0.0.0" }, { availableDispl
 
 const root = document.getElementById("app") as HTMLElement;
 const content = document.createElement("div");
+content.className = "content";
 const fileInput = document.createElement("input");
 fileInput.type = "file";
 fileInput.accept = "image/png,image/jpeg,image/webp";
@@ -128,9 +132,13 @@ function renderUpload(v: UploadView): Node[] {
   if (v.phase === "local" && v.canvas) out.push(v.canvas);
   if (v.phase === "remote" && v.remoteSrc) {
     const img = el("img", { src: v.remoteSrc, referrerPolicy: "no-referrer", alt: "" });
+    if (v.remoteSize) {
+      img.width = v.remoteSize.w;
+      img.height = v.remoteSize.h;
+    }
     // The photo vanished between the probe and the display: offer the picker instead.
     img.onerror = () => {
-      if (view === v) setView({ ...v, phase: "empty", remoteSrc: undefined });
+      if (view === v) setView({ ...v, phase: "empty", remoteSrc: undefined, remoteSize: undefined });
     };
     out.push(img);
   }
@@ -158,10 +166,23 @@ function renderUpload(v: UploadView): Node[] {
   return out;
 }
 
+// The size of the picture the view shows, if any; it sets the inline column width.
+function pictureSize(v: View): { w: number; h: number } | undefined {
+  if (v.kind === "image" && !v.expired) return { w: v.image.width, h: v.image.height };
+  if (v.kind !== "upload") return undefined;
+  if (v.phase === "local" && v.canvas) return { w: v.canvas.width, h: v.canvas.height };
+  if (v.phase === "remote") return v.remoteSize;
+  return undefined;
+}
+
 function render(): void {
   document.documentElement.lang = locale;
   waitingLine = undefined;
   const v = view;
+  const size = pictureSize(v);
+  // Read by the inline max-width in app.html, so the caption and buttons follow the picture.
+  if (size) content.style.setProperty("--fit-w", `${inlineSize(size.w, size.h).w}px`);
+  else content.style.removeProperty("--fit-w");
   switch (v.kind) {
     case "empty":
       content.replaceChildren();
@@ -194,7 +215,7 @@ function applyContext(ctx: McpUiHostContext | undefined): void {
   const fullscreen = ctx.displayMode === "fullscreen";
   document.documentElement.dataset.mode = fullscreen ? "fullscreen" : "inline";
   const [top, right, bottom, left] = fullscreen && inset ? [inset.top, inset.right, inset.bottom, inset.left] : [0, 0, 0, 0];
-  root.style.padding = fullscreen ? `${top + 8}px ${right + 8}px ${bottom + 8}px ${left + 8}px` : "0";
+  root.style.padding = fullscreen ? `${top + 8}px ${right + 8}px ${bottom + 8}px ${left + 8}px` : "0 0 8px";
   root.style.setProperty("--pad-y", `${fullscreen ? top + bottom + 16 : 0}px`);
 
   const next = pickLocale(ctx.locale ?? navigator.language);
@@ -213,7 +234,9 @@ function probe(v: UploadView): void {
   const img = new Image();
   img.referrerPolicy = "no-referrer";
   img.onload = () => {
-    if (view === v) setView({ ...v, phase: "remote", remoteSrc: src });
+    // A zero size would make the column 0 px wide, so an unreadable size leaves it unbounded.
+    const { naturalWidth: w, naturalHeight: h } = img;
+    if (view === v) setView({ ...v, phase: "remote", remoteSrc: src, remoteSize: w > 0 && h > 0 ? { w, h } : undefined });
   };
   img.onerror = () => {
     if (view === v) setView({ ...v, phase: "empty" });
@@ -283,7 +306,7 @@ async function uploadPhoto(file: File): Promise<void> {
     fail({ key: "uploadFailed" });
     return;
   }
-  patchUpload(v, { busy: false, phase: "local", canvas, remoteSrc: undefined, failure: undefined });
+  patchUpload(v, { busy: false, phase: "local", canvas, remoteSrc: undefined, remoteSize: undefined, failure: undefined });
 }
 
 fileInput.onchange = () => {
