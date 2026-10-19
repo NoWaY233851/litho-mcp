@@ -97,7 +97,7 @@ All commands run from a clone of this repository. Check flags against `npx verce
    npx vercel --prod
    ```
 
-   Use the production URL this command prints in the steps below. It may differ from the project name; `<project>.vercel.app` stands for it in this document.
+   The command prints two URLs. Use the one labeled `Aliased`: it is the project's production domain, and `<project>.vercel.app` stands for it in this document. The one labeled `Production` is that single deployment's own URL. It sits behind Vercel's deployment protection and answers `302` (a redirect to a Vercel sign-in), so do not use it for the connector or the check below.
 
 6. Check that the endpoint rejects unauthenticated requests:
 
@@ -113,7 +113,7 @@ All commands run from a clone of this repository. Check flags against `npx verce
 
 1. Open Customize > Connectors and add a custom connector.
 2. URL: `https://<project>.vercel.app/mcp`.
-3. Authentication: **No sign-in** (no OAuth).
+3. Authentication: **No sign-in** (no OAuth). claude.ai shows a warning for this choice. It is expected: the request header in the next step is the authentication.
 4. Request header: name `Authorization`, value `Bearer <CONNECTOR_SECRET>`.
 5. Add it on claude.ai web or the desktop app first; the dialog with request headers is easiest to use there. Do not screenshot or share the dialog while it shows the header value.
 
@@ -130,6 +130,10 @@ If the widget reports that the photo could not be uploaded, the server answered 
 
 If claude.ai reports a "Connection issue" saying the server asked for sign-in (status 401), the header value is wrong or missing.
 
+### Using it
+
+claude.ai has its own ways to make visuals, and it may use them for a request such as "draw a recipe card". The first time in a conversation, name the connector, for example "use litho-mcp to generate a recipe card". Once litho-mcp has been used in a conversation, Claude keeps using it there.
+
 ## Rotate the secret
 
 1. Generate a new value and save it in a password manager:
@@ -145,7 +149,7 @@ If claude.ai reports a "Connection issue" saying the server asked for sign-in (s
    printf %s "$CONNECTOR_SECRET" | npx vercel env add CONNECTOR_SECRET production --sensitive --force
    ```
 
-3. Redeploy with `npx vercel --prod`. The old connector fails at once.
+3. Redeploy with `npx vercel --prod`. The old connector fails at once, and claude.ai shows "This connector's stored credential was rejected". That message is about the connector secret, not the OpenRouter key.
 4. Remove the connector in claude.ai and add it again with the new header value. The headers of an existing connector cannot be edited.
 
 `env add --force` replaces any variable, so `CRON_SECRET` and `OPENROUTER_API_KEY` rotate the same way (create the new OpenRouter key in its dashboard first). Rotating `CRON_SECRET` needs no connector change.
@@ -191,7 +195,7 @@ Host-specific code stays behind small adapters so the core can move hosts. Only 
 
 - The Claude desktop app has no direct "save image", and Copy Image does not work. Copy the image address from the result and open it in a browser.
 - The desktop app cannot decode DNG photos, and probably not HEIC. Export them as JPEG first. iOS converts both.
-- After replacing an uploaded photo, wait about a minute before asking for an edit, or the previous photo may still be used.
+- After replacing an uploaded photo, wait about a minute before asking for an edit, or the previous photo may still be used. The widget shows the same note ("Claude can use the new photo in about a minute.") after a replacement.
 - Android is untested.
 
 ## Remove a deployment
