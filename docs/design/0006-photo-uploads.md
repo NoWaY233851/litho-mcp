@@ -34,7 +34,7 @@ The widget also has to get the new image's id to Claude. The MCP Apps host offer
    - It opens the widget in upload mode.
    - Because the id is in the tool result from the start, Claude already knows it. Nothing has to be sent back from the widget.
 2. **On mount**, the widget probes that URL with an `<img>` load:
-   - if it loads, it shows the uploaded photo, "Uploaded" and "Replace photo";
+   - if it loads, it shows the uploaded photo, "Uploaded" and "Replace photo". After a successful replacement it also says Claude can use the new photo in about a minute; a first upload shows no note;
    - otherwise it shows one "Choose photo" button: `<input type="file" accept="image/png,image/jpeg,image/webp">`. The native input stays hidden behind the widget's own button, and only the widget's preview is shown.
 
    The probe adds a cache-busting query to the URL, because the upload object is cached for only a short time ([0010](0010-vercel-blob-storage.md)).
@@ -99,7 +99,7 @@ Tested on the production deployment from claude.ai web (macOS, Chrome), Claude d
 - **Undecodable format:** on desktop, a DNG shows "This device can't read this photo's format. Choose a JPEG, PNG or WebP, or export the photo first."
 - **Size ladder:** a detail-rich 48 MP iPhone photo uploaded, which exercises the step-down.
 - **Replace photo:** the new photo displays at once, and an edit requested later used it. The delay of about a minute is the CDN propagation described in the 2026-10-17 revision.
-- **Replace note (fixed 2026-10-19):** the widget did not mention that delay. After a successful replacement it now shows "Claude can use the new photo in about a minute." (zh-TW: 「約一分鐘後 Claude 才能使用新照片。」). A first upload shows no note. Verified on web (English) and iOS (zh-TW).
+- **Replace note (fixed 2026-10-19):** the widget did not mention that delay. The note was verified on web (English) and iOS (zh-TW).
 - **Upload then edit:** `edit_image` with the `up_` id worked on all three on 2026-10-18, and again on 2026-10-19 on the final deployment.
 - **Android:** not tested (no device).
 
@@ -129,3 +129,7 @@ Tested on the production deployment from claude.ai web (macOS, Chrome), Claude d
 
   If no step fits, the widget reports that the upload failed. The ladder is defined in `ui/lib.ts`.
 - The server-side 10 MiB check on uploads is unchanged. It no longer limits the widget in practice, because the transport cap is lower, and stays as defense in depth for other callers.
+
+## Revision (2026-10-19)
+
+- The widget now shows a note after a replacement, because an overwrite can take up to about 60 seconds to reach the Blob CDN ([0010](0010-vercel-blob-storage.md)).

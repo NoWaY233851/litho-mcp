@@ -99,7 +99,7 @@ Tested on claude.ai web (macOS Safari), Claude desktop (macOS) and the Claude iO
 
 Tested on the production deployment from claude.ai web (macOS, Chrome), Claude desktop (macOS) and the Claude iOS app. Fixes from the first run were deployed and re-tested on 2026-10-19.
 
-- **Inline display:** images render inline on all three, captioned `model · aspect ratio · $cost`. Per-image costs with `openai/gpt-image-2.5-flare` were $0.005 to $0.023 for generations and edits.
+- **Inline display:** images render inline on all three, captioned `model · aspect ratio · $cost`.
 - **Fullscreen:** a tap opens it on all three, and was re-verified after the fixes below. On iOS the content stays clear of the top bar and composer.
 - **Theming and locale:** web (dark) and desktop (dark and light) are readable. iOS, whose locale is zh-TW, shows the Traditional Chinese copy.
 - **Desktop:** in the image context menu only Copy Image Address works.

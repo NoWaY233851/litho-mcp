@@ -96,7 +96,7 @@ All commands run from a clone of this repository. Check flags against `npx verce
    npx vercel --prod
    ```
 
-   The command prints two URLs. Use the one labeled `Aliased`: it is the project's production domain, and `<project>.vercel.app` stands for it in this document. The one labeled `Production` is that single deployment's own URL. It sits behind Vercel's deployment protection and answers `302` (a redirect to a Vercel sign-in), so do not use it for the connector or the check below.
+   The command prints two URLs. Use the one labeled `Aliased`: it is the project's production domain, and `<project>.vercel.app` stands for it in this document. The one labeled `Production` is that single deployment's own URL. It sits behind Vercel's deployment protection and answers `302`, so do not use it for the connector or the check below.
 
 6. Check that the endpoint rejects unauthenticated requests:
 
