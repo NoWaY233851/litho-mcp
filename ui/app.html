@@ -23,6 +23,12 @@
          before the host context arrives. */
       html:not([data-mode="fullscreen"]),
       html:not([data-mode="fullscreen"]) body { overflow: hidden; }
+      /* The host keeps the frame at the full column width, so anything painted beyond the 480 px
+         box would show as an empty panel; inline the chat shows through instead (ADR 0005).
+         Keeping color-scheme matched to the host theme is what stops browsers from painting an
+         opaque backdrop behind a transparent iframe, so leave the :root rule as it is. */
+      html:not([data-mode="fullscreen"]),
+      html:not([data-mode="fullscreen"]) body { background: transparent; }
       /* --fit-w comes from the picture's size, set per view. Pictures fill this column, so they
          keep their ratio, and the caption and buttons follow the same width. */
       html:not([data-mode="fullscreen"]) .content { max-width: var(--fit-w, none); }

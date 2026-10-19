@@ -117,3 +117,4 @@ Tested on claude.ai web (macOS Safari), Claude desktop (macOS) and the Claude iO
 - The full-width inline image was too tall: a 2:3 image was about 1100 px high on web. Inline images now fit a 480×480 CSS px box (see Decision). Fullscreen is unchanged.
 - The inline view never scrolls its own document. The host sizes the frame to the content, and a classic scrollbar narrowed the content, so the full-width image became shorter, the reported height was computed at the narrower width, and the scrollbar stayed (a white strip on web, a grey bar on desktop).
 - Text rows (caption, status, errors, buttons) are inset from the frame edge, because the host's rounded corners clipped the first character on iOS.
+- Outside fullscreen the widget has no background of its own. The host keeps the frame at the full column width, so a painted background showed as an empty panel beside the smaller image.
