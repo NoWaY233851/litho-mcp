@@ -10,6 +10,13 @@ on:
     #   - "src/**/*.js"
     #   - "src/**/*.jsx"
 
+# One review per pull request at a time. A push that updates a stack of pull
+# requests can deliver the same event more than once, and a newer push makes an
+# in-flight review of the old head pointless.
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   claude-review:
     # Optional: Filter by PR author
