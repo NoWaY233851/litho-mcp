@@ -87,7 +87,7 @@ Tested on claude.ai web (macOS Safari), Claude desktop (macOS) and the Claude iO
 
 ## Validation (2026-10-18 and 2026-10-19, acceptance)
 
-Tested on the production deployment from claude.ai web, Claude desktop and the Claude iOS app.
+Checked on the production deployment from claude.ai web.
 
 - **Adding the connector:** with No sign-in and an `Authorization: Bearer <secret>` request header, the add completed directly, with no "Continue anyway" step. claude.ai shows a warning when No sign-in is chosen.
 - **Request log during the add:** a header-less `POST /mcp` answered `401` (user agent python-httpx), and three `/.well-known/oauth-*` requests got Vercel's static `404`.
