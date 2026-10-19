@@ -92,3 +92,7 @@ Tested with throwaway deployments on Node 24 (linux x64), from claude.ai web (ma
 - **Protocol versions:** model-initiated calls use 2026-07-28 (`server/discover`, no `initialize`) on every platform. The iOS app's widget-initiated calls and `resources/read` use 2025-11-25.
 - **CPU:** a generate-like request (fetch and `res.json()` of a ~6 MB OpenRouter-shaped body, base64-decode of a 4.5 MB PNG, Blob `put`, 1024 px WebP thumbnail) took 515-601 ms of process CPU, 0.75-0.88 s wall and about 197 MB peak RSS over three warm runs. `JSON.parse` of the body is about 200-265 ms of that and the thumbnail about 175-212 ms. Hobby's 4 Active CPU-hours a month cover roughly 20,000 such requests.
 - **sharp:** version 0.35.5 (libvips 8.18.7) loads in a plain Vercel Function. See [0010](0010-vercel-blob-storage.md) for the thumbnail results.
+
+## Revision (2026-10-19)
+
+- Clients on the 2026-07-28 protocol open a `subscriptions/listen` stream on connect. With list changes advertised, which is the SDK default, that stream stayed open until the 300 s limit, so each connected client produced a timed-out `POST /mcp` about every 5 minutes. The server now advertises `listChanged: false` for tools and resources, because neither changes within a deployment, and the stream ends right after its acknowledgement.

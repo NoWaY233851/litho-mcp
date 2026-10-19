@@ -29,7 +29,13 @@ export const UI_URI = "ui://litho/app.html";
 const WIDGET_RESOURCE_DOMAINS = [`https://*${BLOB_HOST_SUFFIX}`];
 
 export function createLithoServer(deps: Deps): McpServer {
-  const server = new McpServer({ name: "litho-mcp", version: "0.0.0" });
+  // The tools and the widget resource never change within a deployment. Advertising list changes
+  // makes clients hold a subscriptions/listen stream open until Vercel's 300 s limit cuts it
+  // (docs/design/0008-vercel-hobby.md).
+  const server = new McpServer(
+    { name: "litho-mcp", version: "0.0.0" },
+    { capabilities: { tools: { listChanged: false }, resources: { listChanged: false } } },
+  );
 
   registerAppResource(server, "litho-widget", UI_URI, { mimeType: RESOURCE_MIME_TYPE }, async (uri) => ({
     contents: [

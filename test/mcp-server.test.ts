@@ -138,12 +138,36 @@ describe.each(ERAS)("MCP endpoint, %s client", (_label, mode) => {
     expect(result.isError).toBe(true);
     await client.close();
   });
+
+  it("advertises no list-changed notifications", async () => {
+    const { client } = await connect(mode);
+    const caps = client.getServerCapabilities();
+    expect(caps?.tools?.listChanged).toBe(false);
+    expect(caps?.resources?.listChanged).toBe(false);
+    expect(caps?.prompts).toBeUndefined();
+    await client.close();
+  });
 });
 
 describe("transport era", () => {
   it("negotiates 2025-11-25 for the legacy client", async () => {
     const { client, transport } = await connect("legacy");
     expect(transport.protocolVersion).toBe("2025-11-25");
+    await client.close();
+  });
+});
+
+describe("subscriptions/listen", () => {
+  it("ends a subscriptions/listen stream at once, honoring nothing", async () => {
+    const { client } = await connect({ pin: "2026-07-28" });
+    const sub = await client.listen({
+      toolsListChanged: true,
+      resourcesListChanged: true,
+      promptsListChanged: true,
+      resourceSubscriptions: [UI_URI],
+    });
+    expect(sub.honoredFilter).toEqual({});
+    await expect(sub.closed).resolves.toBe("graceful");
     await client.close();
   });
 });
