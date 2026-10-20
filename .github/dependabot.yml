@@ -1,0 +1,18 @@
+# The workflows pin actions to commit SHAs, which never move on their own.
+# Dependabot proposes newer releases and rewrites the SHA together with its
+# trailing release comment.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    # A release must be a week old before it is proposed, so a compromised or
+    # broken release has time to be noticed and pulled first.
+    cooldown:
+      default-days: 7
+    # One pull request per run instead of one per action.
+    groups:
+      github-actions:
+        patterns:
+          - '*'
