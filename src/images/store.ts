@@ -215,7 +215,7 @@ export function createBlobStore(
 
     async delete(urls) {
       for (let i = 0; i < urls.length; i += DELETE_BATCH) {
-        await del(urls.slice(i, i + DELETE_BATCH), { ...auth });
+        await del(urls.slice(i, i + DELETE_BATCH), auth);
       }
     },
   };
