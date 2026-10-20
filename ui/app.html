@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>litho</title>
+    <style>
+      /* Colors and fonts come from the host's tokens; the fallbacks are system colors so the
+         widget stays readable in light and dark before the host context arrives. */
+      :root { color-scheme: light dark; }
+      body {
+        margin: 0;
+        font-family: var(--font-sans, system-ui, sans-serif);
+        font-size: var(--font-text-sm-size, 14px);
+        line-height: var(--font-text-sm-line-height, 1.4);
+        color: var(--color-text-primary, CanvasText);
+        background: var(--color-background-primary, Canvas);
+      }
+      #app { padding: 0 0 8px; }
+      /* The host sizes the frame to the content (auto-resize), so an inline view never needs to
+         scroll. A classic scrollbar would narrow the content and leave the reported height
+         computed at the wrong width (ADR 0005). Keyed on "not fullscreen" so it also holds
+         before the host context arrives. */
+      html:not([data-mode="fullscreen"]),
+      html:not([data-mode="fullscreen"]) body { overflow: hidden; }
+      /* The host keeps the frame at the full column width, so anything painted beyond the 480 px
+         box would show as an empty panel; inline the chat shows through instead (ADR 0005).
+         Keeping color-scheme matched to the host theme is what stops browsers from painting an
+         opaque backdrop behind a transparent iframe, so leave the :root rule as it is. */
+      html:not([data-mode="fullscreen"]),
+      html:not([data-mode="fullscreen"]) body { background: transparent; }
+      /* --fit-w comes from the picture's size, set per view. Pictures fill this column, so they
+         keep their ratio, and the caption and buttons follow the same width. */
+      html:not([data-mode="fullscreen"]) .content { max-width: var(--fit-w, none); }
+      /* The iOS host frames the widget in its own card, so a narrow portrait picture aligned left
+         leaves a one-sided strip of the card's background; centering splits it evenly. Wider
+         hosts stay left-aligned. 479px must stay just below INLINE_BOX_PX in ui/lib.ts
+         (ADR 0005). */
+      @media (max-width: 479px) {
+        html:not([data-mode="fullscreen"]) .content { margin-inline: auto; }
+      }
+      /* iOS clips text that sits flush with the host's rounded frame corners. */
+      html:not([data-mode="fullscreen"]) :is(.meta, .status, .error, .detail, .row) { padding-inline: 12px; }
+      img, canvas { display: block; width: 100%; height: auto; border-radius: var(--border-radius-md, 6px); }
+      img.zoomable { cursor: zoom-in; }
+      /* The padding is set from the host's safe-area insets, which cover the overlaid top bar
+         and composer on iOS. */
+      [data-mode="fullscreen"] img, [data-mode="fullscreen"] canvas {
+        width: auto;
+        max-width: 100%;
+        max-height: calc(100dvh - var(--pad-y, 0px) - 3em);
+        margin: 0 auto;
+        object-fit: contain;
+      }
+      .meta { margin: 6px 0 0; color: var(--color-text-secondary, GrayText); font-size: var(--font-text-xs-size, 12px); }
+      .status { margin: 6px 0; color: var(--color-text-secondary, GrayText); }
+      .error { margin: 6px 0; color: var(--color-text-danger, var(--color-text-secondary, GrayText)); }
+      .detail { margin: 2px 0 0; color: var(--color-text-secondary, GrayText); font-size: var(--font-text-xs-size, 12px); word-break: break-word; }
+      .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+      button {
+        font: inherit;
+        padding: 10px 14px;
+        min-height: 44px;
+        color: var(--color-text-primary, ButtonText);
+        background: var(--color-background-secondary, ButtonFace);
+        border: 1px solid var(--color-border-primary, #8886);
+        border-radius: var(--border-radius-md, 6px);
+      }
+      button:disabled { opacity: 0.6; }
+      /* Hidden without display:none so the picker still opens from the button on every
+         host; the native control's own thumbnail can render black on iOS. */
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="./app.ts"></script>
+  </body>
+</html>

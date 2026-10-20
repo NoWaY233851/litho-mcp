@@ -1,6 +1,6 @@
 # 0002. Single user per deployment; OAuth with an owner password
 
-- Status: Accepted
+- Status: Superseded by [0009](0009-connector-secret-header.md) (2026-10-17)
 - Date: 2026-10-16
 
 ## Context

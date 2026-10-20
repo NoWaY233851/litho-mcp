@@ -1,6 +1,6 @@
 # 0005. Show images inline with an MCP Apps widget
 
-- Status: Accepted, pending platform validation
+- Status: Accepted. Validated on claude.ai web and iOS on 2026-10-16, and on web, desktop and iOS with Blob-hosted images on 2026-10-17 and in acceptance on 2026-10-18 and 2026-10-19; Android is untested. Revised on 2026-10-17 for Blob-hosted images and host theming.
 - Date: 2026-10-16
 
 ## Context
@@ -42,14 +42,16 @@ Options considered for the in-chat layout:
 - It has no framework, and is bundled into a single HTML file with Vite and `vite-plugin-singlefile`.
 - It switches mode based on `structuredContent.kind`.
 - **Layout: image only.**
-  - The image fills the width.
-  - A small caption below reads `model · aspect ratio · $cost`.
+  - Inline, the image fits inside a 480×480 CSS px box, keeping its aspect ratio and never upscaled. It is left-aligned, or centered when the column is narrower than the box (phones), and the caption below follows its width. The upload preview follows the same rule.
+  - The caption reads `model · aspect ratio · $cost`.
   - Tapping the image requests fullscreen.
   - No buttons and no version strip.
 - While a generation is running, it shows "Generating…" and the elapsed seconds. Generation often takes 30–90 seconds.
 - `img.onerror` shows an "expired" note.
-- Full-size images load from `/img/<id>` with `referrerpolicy="no-referrer"`. The CSP lists only the Worker's own origin.
-- Text is in English and Traditional Chinese, chosen from `navigator.language`.
+- Full-size images load from the image's public Blob URL ([0010](0010-vercel-blob-storage.md)) with `referrerpolicy="no-referrer"`. The CSP's `resourceDomains` lists only the wildcard `https://*.public.blob.vercel-storage.com`.
+- Text is in English and Traditional Chinese, chosen from `hostContext.locale`, falling back to `navigator.language`. Traditional Chinese is used only for Traditional locales (the Hant script, or Taiwan, Hong Kong or Macau without a script); every other locale, Simplified Chinese included, gets English.
+- The widget applies the host's theme, style tokens and fonts (`applyDocumentTheme`, `applyHostStyleVariables`, `applyHostFonts`), and stays readable in dark mode.
+- In fullscreen, content is padded by `hostContext.safeAreaInsets`.
 
 **Platform failures**
 - If validation shows the widget doesn't render on some **mobile** platform, that platform degrades: it shows the tool result's thumbnail (collapsed) and the link in the text. Both are already in the result.
@@ -58,7 +60,7 @@ Options considered for the in-chat layout:
 **Platform validation (before building the real server)**
 A throwaway Worker is deployed and tested on web, desktop, iOS and Android. It checks:
 1. whether the widget renders;
-2. whether `/img` URLs load in `<img>`;
+2. whether full-size image URLs load in `<img>`;
 3. whether fullscreen works;
 4. whether long-press saves the image;
 5. the widget's HTML size;
@@ -66,9 +68,72 @@ A throwaway Worker is deployed and tested on web, desktop, iOS and Android. It c
 
 Results update this ADR.
 
+## Validation (2026-10-16, claude.ai web and iOS)
+
+A throwaway Worker (Phase 0) was tested on claude.ai web (macOS Safari) and the iOS app.
+
+- **Rendering:** the widget renders on both, served by a stateless `createMcpHandler` with the ext-apps `registerAppTool` and `registerAppResource` helpers.
+- **Images:** full-size images load in `<img>` from the server's origin with no CSP violations. `resourceDomains` and `connectDomains` in `_meta.ui.csp` are honored.
+- **Sandbox origin:** without `_meta.ui.domain`, it is `https://<32 hex>.claudemcpcontent.com`.
+- **Fullscreen:** works on both. On iOS, content needs padding by `hostContext.safeAreaInsets` (observed: top 113, bottom 140).
+- **Saving:** long-press saves the image on iOS; right-click works on web.
+- **`downloadFile`:** listed in `hostCapabilities` on web only, not on iOS, so a download button built on it wouldn't work on phones.
+- **Scrolling:** on mobile, inline widgets can't scroll internally; swipes go to the chat. The inline view has to fit without scrolling.
+- **Host context:** it provides `theme`, the `styles.variables` tokens and a per-app `locale` (web reported en-US, iOS zh-TW). The Phase 0 widget ignored them and was unreadable in dark mode, so the widget must use the host's theme tokens and locale.
+- **Protocol version:** claude.ai sent `MCP-Protocol-Version: 2026-07-28`, and `2025-11-25` in one session.
+- **Not tested then:** desktop and Android. Desktop was covered on 2026-10-17 (below).
+
+## Validation (2026-10-17, Vercel)
+
+Tested on claude.ai web (macOS Safari), Claude desktop (macOS) and the Claude iOS app (iOS 18.7) against a throwaway Vercel deployment.
+
+- **Blob images:** a public Blob URL loads in the widget `<img>` on all three. The CSP wildcard `https://*.public.blob.vercel-storage.com` is honored: web and desktop echo it in `hostCapabilities.sandbox.csp`, and iOS does not report `sandbox` but loads the image. The exact store host also works (tested on web after the resource was re-read in a new conversation). The wildcard is the decision, so the CSP needs no per-deployment value. The `get_image_data` fallback is not needed.
+- **Desktop:** the widget renders, fullscreen works and dark mode is readable. No Allow / Always allow prompt appeared. The context menu offers only Copy Image (which did not work) and Copy Image Address, so there is no direct save. A download button stays a non-goal.
+- **`downloadFile`:** advertised on web and desktop, not on iOS.
+- **iOS:** fullscreen content stays clear of the host's top bar and composer when the widget pads by `hostContext.safeAreaInsets` (top 113, bottom 140 on the test phone). Long-press saves the image. `locale` was zh-TW, while web and desktop reported en-US.
+- **Theming:** the widget stayed readable in light (iOS) and dark (web, desktop) themes using the host's style variables.
+- **Sandbox origin:** `https://<32 hex>.claudemcpcontent.com`, different for each conversation. claude.ai re-reads the UI resource once per new conversation.
+- **Android:** not tested (no device). Mobile degradation as described under Platform failures applies if it fails there.
+
+## Validation (2026-10-18 and 2026-10-19, acceptance)
+
+Tested on the production deployment from claude.ai web (macOS, Chrome), Claude desktop (macOS) and the Claude iOS app. Fixes from the first run were deployed and re-tested on 2026-10-19.
+
+- **Inline display:** images render inline on all three, captioned `model · aspect ratio · $cost`.
+- **Fullscreen:** a tap opens it on all three, and was re-verified after the fixes below. On iOS the content stays clear of the top bar and composer.
+- **Theming and locale:** web (dark) and desktop (dark and light) are readable. iOS, whose locale is zh-TW, shows the Traditional Chinese copy.
+- **Desktop:** in the image context menu only Copy Image Address works.
+- **Problems found and fixed** (the changes are in the 2026-10-19 revision), each re-verified on 2026-10-19:
+  - a white strip on web and a grey scrollbar on desktop at the right edge (web and desktop);
+  - a full-width inline image that was too large; with the 480×480 box, 2:3 renders at about 320×480 and 3:2 at about 480×320 (all three);
+  - the caption's first character clipped on iOS (iOS);
+  - a grey panel beside the smaller image, found during the re-test (web in dark and light, desktop);
+  - a one-sided strip of the host's card on iOS for portrait images, found during the re-test (iOS).
+- **Swipes on iOS:** a swipe starting on the image did not scroll the chat at first. After the first two fixes above it does, with no change specific to it.
+- **Tool routing:** in new chats that did not name the tool, "draw a recipe card" made Claude use claude.ai's own design tools, once by drawing the card itself and once with Claude Design. "Generate an image of a recipe card" called `generate_image`. The tool description now opens with when to use it, and the README tells users to name the connector or ask for an image.
+- **Android:** not tested (no device).
+
 ## Consequences
 
 - Images are visible inline without expanding anything. Phones are the most constrained target.
-- Saving or downloading relies on the platform's long-press, or on asking Claude for the link, because there's no download button.
+- Saving or downloading relies on long-press on phones, right-click on web, or asking Claude for the link, because there's no download button. Desktop has no direct save at all; the link is the way.
 - The bundled widget adds a build step: `npm run build:ui` runs before tests and deploys.
-- If the `/img` URL approach fails inside the iframe, a widget-only `get_image_data` tool returning base64 is the fallback.
+- Blob URLs load inside the iframe, so no base64 fallback tool is needed. If a platform stops allowing them, a widget-only `get_image_data` tool returning base64 is the fallback.
+
+## Revision (2026-10-17)
+
+- Full-size images now load from the image's public Blob URL ([0010](0010-vercel-blob-storage.md)) instead of the server's `/img/<id>` route, which no longer exists. The CSP's `resourceDomains` therefore lists the wildcard `https://*.public.blob.vercel-storage.com`, which claude.ai honors (see the 2026-10-17 validation). `connectDomains` lists the server origin only if the direct-POST upload fallback ([0006](0006-photo-uploads.md)) is used.
+- UI language now comes from `hostContext.locale`, which is set per app, falling back to `navigator.language`.
+- Theme, style tokens, fonts and fullscreen safe-area padding were added after the validation above.
+
+## Revision (2026-10-18)
+
+- Simplified Chinese locales (zh-CN, zh-SG, zh-Hans and bare zh) now get English instead of Traditional Chinese.
+
+## Revision (2026-10-19)
+
+- The full-width inline image was too tall: a 2:3 image was about 1100 px high on web. Inline images now fit a 480×480 CSS px box (see Decision). Fullscreen is unchanged.
+- The inline view never scrolls its own document. The host sizes the frame to the content, and a classic scrollbar narrowed the content, so the full-width image became shorter, the reported height was computed at the narrower width, and the scrollbar stayed (a white strip on web, a grey bar on desktop).
+- Text rows (caption, status, errors, buttons) are inset from the frame edge, because the host's rounded corners clipped the first character on iOS.
+- Outside fullscreen the widget has no background of its own. The host keeps the frame at the full column width, so a painted background showed as an empty panel beside the smaller image.
+- On phones the picture is centered instead of left-aligned. The iOS host draws its own card behind the transparent widget, so a portrait image narrower than the card left a strip of the card's background on one side; centering splits it evenly.

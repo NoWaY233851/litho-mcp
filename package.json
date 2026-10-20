@@ -1,0 +1,34 @@
+{
+  "name": "litho-mcp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.19"
+  },
+  "scripts": {
+    "build:ui": "vite build && node scripts/embed-ui.mjs",
+    "test": "npm run build:ui && vitest run",
+    "typecheck": "npm run build:ui && tsc --noEmit && tsc --noEmit -p ui",
+    "hygiene": "node scripts/check-hygiene.mjs",
+    "vercel-build": "npm run build:ui"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "2.0.3",
+    "@modelcontextprotocol/server": "2.3.1",
+    "@vercel/blob": "^2.8.2",
+    "sharp": "^0.35.5",
+    "undici": "^8.12.2",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.3.1",
+    "@types/node": "^24.19.2",
+    "typescript": "^5.9.3",
+    "vercel": "^64.5.0",
+    "vite": "^6.4.4",
+    "vite-plugin-singlefile": "^2.3.3",
+    "vitest": "5.0.5"
+  }
+}

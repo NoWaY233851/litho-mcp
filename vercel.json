@@ -1,0 +1,8 @@
+{
+  "functions": { "api/index.ts": { "maxDuration": 300 } },
+  "rewrites": [
+    { "source": "/mcp", "destination": "/api/index" },
+    { "source": "/cron/cleanup", "destination": "/api/index" }
+  ],
+  "crons": [{ "path": "/cron/cleanup", "schedule": "0 3 * * *" }]
+}
