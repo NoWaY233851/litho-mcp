@@ -7,7 +7,7 @@ vi.mock("@vercel/blob", () => ({
 }));
 
 import { del, list, put } from "@vercel/blob";
-import { MAX_STORED_READ_BYTES } from "../src/images/limits.js";
+import { MAX_STORED_READ_BYTES, READ_BUDGET_EXCEEDED_MESSAGE, readBudget } from "../src/images/limits.js";
 import type { ImageInfo } from "../src/images/sniff.js";
 import { BLOB_HOST_SUFFIX, blobBaseUrl, createBlobStore, createMemoryStore } from "../src/images/store.js";
 
@@ -39,6 +39,28 @@ describe("blobBaseUrl", () => {
   });
 });
 
+describe("readBudget", () => {
+  it("charges a take that fits", () => {
+    const budget = readBudget(10);
+    expect(budget.take(4)).toBe(true);
+    expect(budget.take(6)).toBe(true);
+  });
+
+  it("refuses a take that would pass the limit and charges nothing for it", () => {
+    const budget = readBudget(10);
+    expect(budget.take(7)).toBe(true);
+    expect(budget.take(4)).toBe(false);
+    // The refused 4 was not charged, so the remaining 3 are still available.
+    expect(budget.take(3)).toBe(true);
+  });
+
+  it("accepts exactly the remaining amount and then refuses one more byte", () => {
+    const budget = readBudget(10);
+    expect(budget.take(10)).toBe(true);
+    expect(budget.take(1)).toBe(false);
+  });
+});
+
 describe("memory store", () => {
   it("put/get round-trip; url(id) equals the URL put returns", async () => {
     const store = createMemoryStore();
@@ -50,6 +72,14 @@ describe("memory store", () => {
     expect(got?.info).toEqual(PNG);
     expect(Array.from(got!.bytes)).toEqual(Array.from(PNG_BYTES));
     expect(await store.get(`img_${OTHER_HEX}`)).toBeNull();
+  });
+
+  it("get: charges the object's size to a budget and refuses one that does not fit", async () => {
+    const store = createMemoryStore();
+    await store.put(IMG, PNG_BYTES);
+    const budget = readBudget(PNG_BYTES.length);
+    expect((await store.get(IMG, budget))?.info).toEqual(PNG);
+    await expect(store.get(IMG, budget)).rejects.toThrow(READ_BUDGET_EXCEEDED_MESSAGE);
   });
 
   it("get: refuses an object over 40 MiB instead of returning it", async () => {
@@ -300,6 +330,27 @@ describe("blob store", () => {
     expect(cancelled).toBe(true);
     // Five chunks fit exactly; the sixth crosses the limit. A pull-based stream is not read ahead far.
     expect(pulls).toBeLessThanOrEqual(8);
+  });
+
+  it("get: a read stops once its chunks pass the budget", async () => {
+    const chunk = 512 * 1024;
+    let pulls = 0;
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (pulls >= 8) return controller.close();
+        pulls += 1;
+        controller.enqueue(new Uint8Array(chunk));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    fetchMock.mockResolvedValueOnce(new Response(body, { status: 200 }));
+    await expect(store().get(IMG, readBudget(1024 * 1024))).rejects.toThrow(READ_BUDGET_EXCEEDED_MESSAGE);
+    expect(cancelled).toBe(true);
+    // Two chunks fit and the third is refused; the stream itself is always one chunk ahead of the reader.
+    expect(pulls).toBeLessThanOrEqual(4);
   });
 
   it("get: a body that lies about a small length is still counted", async () => {

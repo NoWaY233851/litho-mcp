@@ -13,7 +13,7 @@
 import { promises as dns } from "node:dns";
 import type { LookupFunction } from "node:net";
 import { Agent, fetch as undiciFetch } from "undici";
-import { MAX_IMAGE_BYTES } from "../images/limits.js";
+import { MAX_IMAGE_BYTES, type ReadBudget } from "../images/limits.js";
 import { sniffImage, type ImageInfo } from "../images/sniff.js";
 import { isIpLiteral, isPublicIp, trimTrailingDots } from "./ip.js";
 
@@ -33,7 +33,8 @@ export type PublicFetchReason =
   | "too_large"
   | "timeout"
   | "not_image"
-  | "too_many_pixels";
+  | "too_many_pixels"
+  | "over_budget";
 
 const MESSAGES: Record<PublicFetchReason, string> = {
   invalid_url: "The image URL is not allowed.",
@@ -45,6 +46,7 @@ const MESSAGES: Record<PublicFetchReason, string> = {
   timeout: "Downloading the image took too long.",
   not_image: "The URL did not return a PNG, JPEG or WebP image.",
   too_many_pixels: "The image is larger than 8192 pixels on a side.",
+  over_budget: "The images together are larger than the total limit.",
 };
 
 export class PublicFetchError extends Error {
@@ -206,7 +208,9 @@ async function request(httpGet: HttpGet, url: URL, pinned: PinnedAddress, signal
   }
 }
 
-async function readBody(response: Response, signal: AbortSignal): Promise<Uint8Array> {
+// A chunk is charged to the shared budget before it is kept, so downloads running in parallel
+// stop as soon as together they pass the total instead of after each has read its own cap.
+async function readBody(response: Response, signal: AbortSignal, budget?: ReadBudget): Promise<Uint8Array> {
   const declared = response.headers.get("content-length");
   // An unusable header is ignored: the streaming count below is what enforces the limit.
   if (declared !== null && /^\d+$/.test(declared) && Number(declared) > MAX_IMAGE_BYTES) {
@@ -226,6 +230,7 @@ async function readBody(response: Response, signal: AbortSignal): Promise<Uint8A
       const { done, value } = await abortable(signal, reader.read());
       if (done) break;
       if (total + value.byteLength > MAX_IMAGE_BYTES) throw new PublicFetchError("too_large");
+      if (budget && !budget.take(value.byteLength)) throw new PublicFetchError("over_budget");
       if (total + value.byteLength > buffer.byteLength) {
         const grown = new Uint8Array(Math.min(Math.max(buffer.byteLength * 2, total + value.byteLength), MAX_IMAGE_BYTES));
         grown.set(buffer.subarray(0, total));
@@ -252,7 +257,13 @@ function initialCapacity(declared: string | null): number {
   return 64 * 1024;
 }
 
-async function fetchFollowingRedirects(input: string, resolve: Resolve, httpGet: HttpGet, signal: AbortSignal): Promise<Uint8Array> {
+async function fetchFollowingRedirects(
+  input: string,
+  resolve: Resolve,
+  httpGet: HttpGet,
+  signal: AbortSignal,
+  budget?: ReadBudget,
+): Promise<Uint8Array> {
   let url = parseUrl(input);
   for (let redirects = 0; ; redirects++) {
     checkUrl(url);
@@ -271,18 +282,19 @@ async function fetchFollowingRedirects(input: string, resolve: Resolve, httpGet:
       discard(response);
       throw new PublicFetchError("http_error");
     }
-    return readBody(response, signal);
+    return readBody(response, signal, budget);
   }
 }
 
 /**
  * Downloads a public image. The format comes from the magic bytes only (ADR 0007): neither the
  * Content-Type nor the file extension is consulted. One deadline covers DNS, every hop and the
- * body.
+ * body. With a `budget`, the bytes read are charged to it and the download fails with
+ * `over_budget` once they no longer fit.
  */
 export async function fetchPublicImage(
   url: string,
-  opts: { resolve?: Resolve; httpGet?: HttpGet; timeoutMs?: number } = {},
+  opts: { resolve?: Resolve; httpGet?: HttpGet; timeoutMs?: number; budget?: ReadBudget } = {},
 ): Promise<{ bytes: Uint8Array; info: ImageInfo }> {
   const controller = new AbortController();
   let timedOut = false;
@@ -292,7 +304,7 @@ export async function fetchPublicImage(
   }, opts.timeoutMs ?? FETCH_TIMEOUT_MS);
 
   try {
-    const bytes = await fetchFollowingRedirects(url, opts.resolve ?? defaultResolve, opts.httpGet ?? defaultHttpGet, controller.signal);
+    const bytes = await fetchFollowingRedirects(url, opts.resolve ?? defaultResolve, opts.httpGet ?? defaultHttpGet, controller.signal, opts.budget);
     const info = sniffImage(bytes);
     if (!info) throw new PublicFetchError("not_image");
     if (info.width > MAX_IMAGE_SIDE || info.height > MAX_IMAGE_SIDE) throw new PublicFetchError("too_many_pixels");

@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { Deps } from "../deps.js";
 import { base64ToBytes, bytesToBase64 } from "../images/base64.js";
 import { newImageId, parseImageId } from "../images/ids.js";
-import { STORED_TOO_LARGE_MESSAGE } from "../images/limits.js";
+import { READ_BUDGET_EXCEEDED_MESSAGE, STORED_TOO_LARGE_MESSAGE, readBudget, type ReadBudget } from "../images/limits.js";
 import { sniffImage, type ImageInfo } from "../images/sniff.js";
 import { makeThumbnail } from "../images/thumbnail.js";
 import { MAX_IMAGE_BYTES, MAX_IMAGE_SIDE, PublicFetchError, fetchPublicImage } from "../net/public-fetch.js";
@@ -212,6 +212,7 @@ export async function listModels(deps: Deps, args: { query?: string }): Promise<
 const MAX_REFERENCE_ARGS = 16;
 // Every reference is held in memory twice (bytes, then base64) before the request is sent.
 const MAX_TOTAL_REFERENCE_BYTES = 4 * MAX_IMAGE_BYTES;
+const TOTAL_TOO_LARGE_MESSAGE = `The reference images total more than ${MAX_TOTAL_REFERENCE_BYTES / (1024 * 1024)} MiB. Use fewer or smaller images.`;
 
 export const EditArgs = GenerateArgs.extend({
   prompt: z.string().min(1).describe("The edit to make, or what to create from the references. Any language."),
@@ -243,6 +244,7 @@ const notFoundMessage = (id: string): string =>
     ? `Photo ${echo(id)} has not been uploaded yet, or it expired.`
     : `Image ${echo(id)} was not found; it may have expired after the retention period.`;
 
+// No phrase for over_budget: loadReference reports it as the total-size message instead.
 const FETCH_REASON_PHRASES: Record<string, string> = {
   invalid_url: "the URL is not allowed",
   blocked_host: "the host is not allowed",
@@ -263,22 +265,28 @@ async function loadReference(
   deps: Deps,
   ref: Reference,
   fetchPublic: typeof fetchPublicImage,
+  budget: ReadBudget,
 ): Promise<Loaded> {
   if (ref.kind === "id") {
     let stored;
     try {
-      stored = await deps.store.get(ref.id);
+      stored = await deps.store.get(ref.id, budget);
     } catch (e) {
       if (e instanceof Error && e.message === STORED_TOO_LARGE_MESSAGE) {
         return { ok: false, message: `Image ${echo(ref.id)} is too large to use as a reference.` };
+      }
+      if (e instanceof Error && e.message === READ_BUDGET_EXCEEDED_MESSAGE) {
+        return { ok: false, message: TOTAL_TOO_LARGE_MESSAGE };
       }
       throw e;
     }
     return stored ? { ok: true, bytes: stored.bytes, info: stored.info } : { ok: false, message: notFoundMessage(ref.id) };
   }
   try {
-    return { ok: true, ...(await fetchPublic(ref.url)) };
+    return { ok: true, ...(await fetchPublic(ref.url, { budget })) };
   } catch (e) {
+    // The budget is the total cap, so it gets the total wording rather than a per-URL reason.
+    if (e instanceof PublicFetchError && e.reason === "over_budget") return { ok: false, message: TOTAL_TOO_LARGE_MESSAGE };
     if (e instanceof PublicFetchError) return { ok: false, message: fetchFailureMessage(ref.url, e) };
     throw e;
   }
@@ -309,16 +317,19 @@ export async function editImage(deps: Deps, args: EditArgs, options: EditOptions
 
     // Each distinct reference is loaded once, however often it is listed, so repeating one
     // large id cannot multiply what is held in memory. Every occurrence still counts toward
-    // the total below because each one is sent to OpenRouter. allSettled so the failure
-    // reported is the first in input order, not the fastest.
+    // the total below because each one is sent to OpenRouter. The loads run in parallel so one
+    // 15 s deadline covers them all (sequential loads would stack it up to 16 times, past the
+    // tool's time limit), and they share one byte budget so together they never hold more than
+    // the total. allSettled so the failure reported is the first in input order, not the fastest.
     const fetchPublic = options.fetchPublic ?? fetchPublicImage;
+    const budget = readBudget(MAX_TOTAL_REFERENCE_BYTES);
     const pending = new Map<string, Promise<Loaded>>();
     const settled = await Promise.allSettled(
       refs.map((ref) => {
         const key = ref.kind === "id" ? `id:${ref.id}` : `url:${ref.url}`;
         let load = pending.get(key);
         if (!load) {
-          load = loadReference(deps, ref, fetchPublic);
+          load = loadReference(deps, ref, fetchPublic, budget);
           pending.set(key, load);
         }
         return load;
@@ -333,9 +344,7 @@ export async function editImage(deps: Deps, args: EditArgs, options: EditOptions
 
     const total = loaded.reduce((sum, r) => sum + r.bytes.length, 0);
     if (total > MAX_TOTAL_REFERENCE_BYTES) {
-      return errorResult(
-        `The reference images total more than ${MAX_TOTAL_REFERENCE_BYTES / (1024 * 1024)} MiB. Use fewer or smaller images.`,
-      );
+      return errorResult(TOTAL_TOO_LARGE_MESSAGE);
     }
     // Only data URLs the server built from sniffed bytes leave this process; a caller's URL is
     // never forwarded to OpenRouter. A repeated reference shares one encoded string.

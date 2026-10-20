@@ -14,6 +14,7 @@ import {
   type HttpGet,
   type Resolve,
 } from "../src/net/public-fetch.js";
+import { readBudget } from "../src/images/limits.js";
 
 const bytes = (...parts: Array<number | number[] | Uint8Array>): Uint8Array =>
   Uint8Array.from(parts.flatMap((p) => (typeof p === "number" ? [p] : Array.from(p))));
@@ -333,6 +334,18 @@ describe("fetchPublicImage: response handling", () => {
     expect(await reasonOf(get(() => new Response(body, { status: 200 })))).toBe("too_large");
     expect(state.cancelled).toBe(true);
     expect(state.pulled).toBeLessThan(40);
+  });
+
+  it("a download stops once its chunks pass the budget", async () => {
+    const { body, state } = countingStream(8, 512 * 1024);
+    const s = scripted({ "https://example.com/a.png": () => new Response(body, { status: 200 }) });
+    const reason = await reasonOf(
+      fetchPublicImage("https://example.com/a.png", { resolve: s.resolve, httpGet: s.httpGet, budget: readBudget(1024 * 1024) }),
+    );
+    expect(reason).toBe("over_budget");
+    expect(state.cancelled).toBe(true);
+    // Two chunks fit and the third is refused; the stream is always one chunk ahead of the reader.
+    expect(state.pulled).toBeLessThanOrEqual(4);
   });
 
   it("does not trust a Content-Length that understates the body", async () => {

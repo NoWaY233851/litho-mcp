@@ -2,7 +2,12 @@
 import { del, list, put } from "@vercel/blob";
 import type { BlobAuth } from "../config.js";
 import { parseImageId, type ImageKind } from "./ids.js";
-import { MAX_STORED_READ_BYTES, STORED_TOO_LARGE_MESSAGE as TOO_LARGE } from "./limits.js";
+import {
+  MAX_STORED_READ_BYTES,
+  READ_BUDGET_EXCEEDED_MESSAGE,
+  STORED_TOO_LARGE_MESSAGE as TOO_LARGE,
+  type ReadBudget,
+} from "./limits.js";
 import { sniffImage, type ImageInfo } from "./sniff.js";
 
 export { BLOB_HOST_SUFFIX, blobBaseUrl } from "./blob-url.js";
@@ -12,9 +17,11 @@ export interface ImageStore {
   put(id: string, bytes: Uint8Array): Promise<string>;
   /**
    * `null` when nothing is stored under `id`, which also covers "does it exist". Throws
-   * `Error("stored object too large")` for an object over 40 MiB rather than reading it.
+   * `Error("stored object too large")` for an object over 40 MiB rather than reading it. With a
+   * `budget`, every chunk read is charged to it, and `Error("reference read budget exceeded")`
+   * is thrown for the chunk that does not fit.
    */
-  get(id: string): Promise<{ bytes: Uint8Array; info: ImageInfo; url: string } | null>;
+  get(id: string, budget?: ReadBudget): Promise<{ bytes: Uint8Array; info: ImageInfo; url: string } | null>;
   /** Derived without I/O, so a URL can be handed out before anything is stored. */
   url(id: string): string;
   /** This store's own URLs only; the host is compared case-insensitively. */
@@ -38,8 +45,10 @@ const OBJECT_PATHNAME = /^(img|up)\/([0-9a-f]{32})$/;
 /**
  * Reads a body without ever holding more than MAX_STORED_READ_BYTES: a declared length over the
  * limit is refused before reading, and the streamed count covers a missing or wrong header.
+ * Each chunk is also charged to `budget` before it is kept, so reads running in parallel stay
+ * within one shared total.
  */
-async function readBounded(response: Response): Promise<Uint8Array> {
+async function readBounded(response: Response, budget?: ReadBudget): Promise<Uint8Array> {
   const declared = response.headers.get("content-length");
   if (declared !== null && /^\d+$/.test(declared) && Number(declared) > MAX_STORED_READ_BYTES) {
     await response.body?.cancel();
@@ -54,6 +63,7 @@ async function readBounded(response: Response): Promise<Uint8Array> {
       const { done, value } = await reader.read();
       if (done) break;
       if (total + value.byteLength > MAX_STORED_READ_BYTES) throw new Error(TOO_LARGE);
+      if (budget && !budget.take(value.byteLength)) throw new Error(READ_BUDGET_EXCEEDED_MESSAGE);
       if (total + value.byteLength > buffer.byteLength) {
         const grown = new Uint8Array(Math.min(Math.max(buffer.byteLength * 2, total + value.byteLength), MAX_STORED_READ_BYTES));
         grown.set(buffer.subarray(0, total));
@@ -147,7 +157,7 @@ export function createBlobStore(
       return expected;
     },
 
-    async get(id) {
+    async get(id, budget) {
       if (!parseImageId(id)) return null;
       const url = scheme.url(id);
       const controller = new AbortController();
@@ -165,7 +175,7 @@ export function createBlobStore(
           await response.body?.cancel();
           throw new Error(`blob read failed: HTTP ${response.status}`);
         }
-        const bytes = await readBounded(response);
+        const bytes = await readBounded(response, budget);
         const info = sniffImage(bytes);
         if (!info) throw new Error("stored object is not a supported image");
         return { bytes, info, url };
@@ -231,9 +241,10 @@ export function createMemoryStore(
       return scheme.url(id);
     },
 
-    async get(id) {
+    async get(id, budget) {
       const stored = parseImageId(id) ? objects.get(id) : undefined;
       if (stored && stored.bytes.length > MAX_STORED_READ_BYTES) throw new Error(TOO_LARGE);
+      if (stored && budget && !budget.take(stored.bytes.length)) throw new Error(READ_BUDGET_EXCEEDED_MESSAGE);
       return stored ? { bytes: stored.bytes.slice(), info: stored.info, url: scheme.url(id) } : null;
     },
 

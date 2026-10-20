@@ -4,6 +4,7 @@ import { loadConfig } from "../src/config.js";
 import { bytesToBase64 } from "../src/images/base64.js";
 import type { ImageInfo } from "../src/images/sniff.js";
 import { newImageId } from "../src/images/ids.js";
+import type { ReadBudget } from "../src/images/limits.js";
 import { createMemoryStore } from "../src/images/store.js";
 import { EditArgs, editImage, openUploader, uploadImageData } from "../src/mcp/tools.js";
 import { MAX_IMAGE_BYTES, MAX_IMAGE_SIDE, PublicFetchError } from "../src/net/public-fetch.js";
@@ -340,6 +341,49 @@ describe("editImage", () => {
     expect(r.isError).toBe(true);
     expect(texts(r)[0]).toMatch(/40 MiB/);
     expect(or.posts()).toHaveLength(0);
+  });
+
+  it("every reference read of one edit draws on one 40 MiB budget, ids and URLs alike", async () => {
+    const { or, deps, store } = setup();
+    const ids = [IMG_A, IMG_B, UP_A];
+    for (const id of ids) await store.put(id, pngOfSize(100, 100, MAX_IMAGE_BYTES));
+    const budgets: Array<ReadBudget | undefined> = [];
+    const big = pngOfSize(100, 100, MAX_IMAGE_BYTES);
+    const fetchPublic = (async (_url: string, opts?: { budget?: ReadBudget }) => {
+      budgets.push(opts?.budget);
+      if (!opts?.budget?.take(big.length)) throw new PublicFetchError("over_budget");
+      return { bytes: big, info: { mime: "image/png", width: 100, height: 100 } };
+    }) as NonNullable<FetchPublic>;
+    const r = await editImage(
+      deps,
+      { prompt: "x", image_ids: ids, image_urls: ["https://images.example.test/1.png", "https://images.example.test/2.png"] },
+      { fetchPublic },
+    );
+    expect(r.isError).toBe(true);
+    expect(texts(r)[0]).toMatch(/40 MiB/);
+    expect(or.posts()).toHaveLength(0);
+    expect(budgets).toHaveLength(2);
+    expect(budgets.every((b) => b !== undefined)).toBe(true);
+    expect(new Set(budgets).size).toBe(1);
+  });
+
+  it("a stored reference over the shared budget gets the total-size message", async () => {
+    const { or, deps, store } = setup();
+    const ids = Array.from({ length: 5 }, (_, i) => `img_${hex(10 + i)}`);
+    for (const id of ids) await store.put(id, pngOfSize(100, 100, MAX_IMAGE_BYTES));
+    const budgets: Array<ReadBudget | undefined> = [];
+    const get = store.get.bind(store);
+    store.get = async (id, ...rest) => {
+      budgets.push(rest[0]);
+      return get(id, ...rest);
+    };
+    const r = await editImage(deps, { prompt: "x", image_ids: ids });
+    expect(r.isError).toBe(true);
+    expect(texts(r)[0]).toMatch(/40 MiB/);
+    expect(or.posts()).toHaveLength(0);
+    expect(budgets).toHaveLength(5);
+    expect(budgets.every((b) => b !== undefined)).toBe(true);
+    expect(new Set(budgets).size).toBe(1);
   });
 
   it("an own URL and the same id share one read", async () => {
