@@ -26,6 +26,8 @@ jobs:
     #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
 
     runs-on: ubuntu-latest
+    # A full review fans out to several subagents and takes minutes, not hours.
+    timeout-minutes: 30
     permissions:
       contents: read
       pull-requests: read
@@ -41,12 +43,41 @@ jobs:
       - name: Run Claude Code Review
         id: claude-review
         uses: anthropics/claude-code-action@v1
+        env:
+          # The action ends the session at the first result message. Subagents
+          # start in the background by default, so the review plugin's first
+          # dispatch produced that result and the run ended before the review
+          # (anthropics/claude-code-action#1499). Foreground subagents keep the
+          # whole review inside one result.
+          CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1'
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
           plugins: 'code-review@claude-code-plugins'
           prompt: '/code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
-          claude_args: '--allowedTools "mcp__github_inline_comment__create_inline_comment"'
+          # The Bash rules repeat the review command's own allowed-tools as session
+          # rules, which subagents inherit. A one-shot run is never woken up again,
+          # so the tools for waiting on later events are removed.
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"
+            --disallowedTools "ScheduleWakeup,Monitor,SendMessage"
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
 
+      # The action logs only counts, so a review that stopped early looks the same
+      # as a clean one. Print what the run did, without any tool output.
+      - name: Summarize the review run
+        if: always() && steps.claude-review.outputs.execution_file != ''
+        env:
+          EXECUTION_FILE: ${{ steps.claude-review.outputs.execution_file }}
+        run: |
+          jq -r '
+            (map(select(.type == "result")) | last) as $r
+            | ($r.permission_denials // []) as $denied
+            | "turns: \($r.num_turns // "none")",
+              "subagents started: \([.[] | select(.type == "assistant" and .parent_tool_use_id == null)
+                | .message.content[]? | select(.type == "tool_use" and (.name == "Agent" or .name == "Task"))] | length)",
+              "denied tool calls: \($denied | length)",
+              ($denied[] | "  \(.tool_name) \((.tool_input.command // "") | .[0:160])"),
+              "final message: \(($r.result // "") | .[0:400])"
+          ' "$EXECUTION_FILE"
