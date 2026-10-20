@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   INLINE_BOX_PX,
@@ -18,6 +19,11 @@ describe("inlineSize", () => {
     expect(inlineSize(1024, 1536)).toEqual({ w: 320, h: 480 });
     expect(inlineSize(1536, 1024)).toEqual({ w: 480, h: 320 });
     expect(inlineSize(2048, 2048)).toEqual({ w: 480, h: 480 });
+  });
+  it("the narrow-column media query sits one pixel below INLINE_BOX_PX", () => {
+    const html = readFileSync(new URL("../ui/app.html", import.meta.url), "utf8");
+    const widths = [...html.matchAll(/@media \(max-width: (\d+)px\)/g)].map((m) => Number(m[1]));
+    expect(widths).toEqual([INLINE_BOX_PX - 1]);
   });
   it("never upscales a small image", () => {
     expect(inlineSize(256, 128)).toEqual({ w: 256, h: 128 });
