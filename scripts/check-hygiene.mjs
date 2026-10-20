@@ -17,9 +17,13 @@ const PLACEHOLDER_PROJECT_HOST = /<project>\.vercel\.app/g;
 // naming a store.
 const CONCRETE_BLOB_HOST = /[A-Za-z0-9-]\.public\.blob\.vercel-storage\.com/;
 
-// Real Blob credentials: a read-write token or a prefixed store id. Obviously fake values
-// (the word "fake" or "test" anywhere in the match) are the convention for tests and docs.
-const BLOB_CREDENTIAL = /vercel_blob_rw_[A-Za-z0-9]+|\bstore_[A-Za-z0-9]{8,}/g;
+// Real Blob credentials: a read-write token or a prefixed store id. The store id must hold a
+// digit or a capital letter, which keeps snake_case names such as table or column identifiers
+// out of it. A value counts as obviously fake, the convention for tests and docs, only when
+// "fake" or "test" comes right after the prefix; the word further inside would let a real
+// credential that happens to contain it through.
+const BLOB_CREDENTIAL = /vercel_blob_rw_[A-Za-z0-9]+|\bstore_(?=[a-z]*[A-Z0-9])[A-Za-z0-9]{8,}/g;
+const FAKE_BLOB_CREDENTIAL = /^(?:vercel_blob_rw_|store_)(?:fake|test)/i;
 
 // An OpenRouter key, a Vercel project or team id written in prose, and a JWT (which is what a
 // Vercel OIDC token or a copied session token looks like). Same fake/test convention as above.
@@ -42,7 +46,7 @@ const rules = [
   },
   {
     name: "blob credential",
-    test: (l) => hasRealMatch(l, BLOB_CREDENTIAL),
+    test: (l) => (l.match(BLOB_CREDENTIAL) ?? []).some((m) => !FAKE_BLOB_CREDENTIAL.test(m)),
   },
   { name: "OpenRouter key", test: (l) => hasRealMatch(l, OPENROUTER_KEY) },
   { name: "Vercel id", test: (l) => hasRealMatch(l, VERCEL_ID) },
