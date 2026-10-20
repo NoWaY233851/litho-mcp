@@ -306,8 +306,9 @@ async function fetchFollowingRedirects(
 /**
  * Downloads a public image. The format comes from the magic bytes only (ADR 0007): neither the
  * Content-Type nor the file extension is consulted. One deadline covers DNS, every hop and the
- * body. With a `budget`, the bytes read are charged to it and the download fails with
- * `over_budget` once they no longer fit.
+ * body. With a `budget`, the bytes read are charged to it, and a declared length is charged up
+ * front, before its buffer is allocated. The download fails with `over_budget` once they no
+ * longer fit.
  */
 export async function fetchPublicImage(
   url: string,

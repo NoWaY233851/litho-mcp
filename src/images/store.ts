@@ -113,7 +113,7 @@ function urlScheme(baseUrl: string): Pick<ImageStore, "url" | "idFromUrl"> {
   };
 }
 
-// `auth` is spread into every SDK call. A token is passed explicitly because the
+// `auth` is passed to every SDK call. A token is passed explicitly because the
 // SDK prefers OIDC over the environment token whenever a store id is present;
 // with `{ storeId }` there is no token and the SDK resolves the platform's OIDC
 // token per call, inside the request (docs/design/0010-vercel-blob-storage.md).

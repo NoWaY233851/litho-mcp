@@ -26,7 +26,8 @@ const BLOB_CREDENTIAL = /vercel_blob_rw_[A-Za-z0-9]+|\bstore_(?=[a-z]*[A-Z0-9])[
 const FAKE_BLOB_CREDENTIAL = /^(?:vercel_blob_rw_|store_)(?:fake|test)/i;
 
 // An OpenRouter key, a Vercel project or team id written in prose, and a JWT (which is what a
-// Vercel OIDC token or a copied session token looks like). Same fake/test convention as above.
+// Vercel OIDC token or a copied session token looks like). Unlike the Blob rule above, these
+// treat a match as fake when "fake" or "test" appears anywhere in it.
 const OPENROUTER_KEY = /sk-or-v1-[0-9a-f]{64}/g;
 const VERCEL_ID = /\b(prj|team)_[A-Za-z0-9]{16,}/g;
 const JWT = /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./g;
