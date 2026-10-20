@@ -59,11 +59,18 @@ function retentionDays(raw: string | undefined): number {
   return days;
 }
 
-// Letters and digits with inner hyphens only. Anything the URL parser would
-// rewrite or reject (such as an "xn--" label with invalid punycode) fails the
-// round-trip check below.
+// Letters and digits with inner hyphens only.
 const DNS_LABEL = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
 
+// Hyphens in the third and fourth positions mark a reserved label (RFC 5890,
+// section 2.3.1), such as an "xn--" IDNA label. Whether the URL parser accepts
+// one with invalid punycode differs between Node releases, and a store id has
+// no use for this form, so it is rejected before the parser is consulted.
+function isReservedLabel(id: string): boolean {
+  return id.slice(2, 4) === "--";
+}
+
+// A second guard: the URL the store builds must parse back to the same host.
 function isStoreHost(id: string): boolean {
   try {
     return new URL(blobBaseUrl(id)).hostname === `${id}${BLOB_HOST_SUFFIX}`;
@@ -84,7 +91,7 @@ function blobStoreId(env: Env, token: string | undefined): string {
   const fromEnv = Boolean(explicit);
   const raw = fromEnv ? explicit!.replace(/^store_/, "") : ((token ?? "").split("_")[3] ?? "");
   const id = raw.toLowerCase();
-  if (!DNS_LABEL.test(id) || !isStoreHost(id)) {
+  if (!DNS_LABEL.test(id) || isReservedLabel(id) || !isStoreHost(id)) {
     throw new ConfigError(`invalid env: ${fromEnv ? "BLOB_STORE_ID" : "BLOB_READ_WRITE_TOKEN"}`);
   }
   return id;
