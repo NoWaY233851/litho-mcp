@@ -49,7 +49,7 @@ Options considered for the in-chat layout:
 - While a generation is running, it shows "Generating…" and the elapsed seconds. Generation often takes 30–90 seconds.
 - `img.onerror` shows an "expired" note.
 - Full-size images load from the image's public Blob URL ([0010](0010-vercel-blob-storage.md)) with `referrerpolicy="no-referrer"`. The CSP's `resourceDomains` lists only the wildcard `https://*.public.blob.vercel-storage.com`.
-- Text is in English and Traditional Chinese, chosen from `hostContext.locale`, falling back to `navigator.language`. Traditional Chinese is used only for Traditional locales (the Hant script, or Taiwan, Hong Kong or Macau without a script); every other locale, Simplified Chinese included, gets English.
+- Text is in English, Traditional Chinese and Simplified Chinese, chosen from `hostContext.locale`, falling back to `navigator.language`. Traditional Chinese is used for Traditional locales (the Hant script, or Taiwan, Hong Kong or Macau without a script). Every other Chinese locale, bare `zh` included, gets Simplified Chinese, and every other language gets English.
 - The widget applies the host's theme, style tokens and fonts (`applyDocumentTheme`, `applyHostStyleVariables`, `applyHostFonts`), and stays readable in dark mode.
 - In fullscreen, content is padded by `hostContext.safeAreaInsets`.
 
@@ -137,3 +137,9 @@ Tested on the production deployment from claude.ai web (macOS, Chrome), Claude d
 - Text rows (caption, status, errors, buttons) are inset from the frame edge, because the host's rounded corners clipped the first character on iOS.
 - Outside fullscreen the widget has no background of its own. The host keeps the frame at the full column width, so a painted background showed as an empty panel beside the smaller image.
 - On phones the picture is centered instead of left-aligned. The iOS host draws its own card behind the transparent widget, so a portrait image narrower than the card left a strip of the card's background on one side; centering splits it evenly.
+
+## Revision (2026-10-20)
+
+- The widget now ships Simplified Chinese copy, so Simplified Chinese locales (zh-CN, zh-SG, zh-Hans and bare zh) get it instead of English. The 2026-10-18 revision chose English only because no Simplified copy existed, and Traditional text would have put a Simplified reader in a script they did not choose.
+- A Chinese locale with no script and a region other than Taiwan, Hong Kong or Macau (zh-US, for example) now gets Simplified Chinese instead of English.
+- The Simplified copy has not yet been seen on a host that reports a Simplified locale. Web and desktop reported en-US and iOS zh-TW during validation.

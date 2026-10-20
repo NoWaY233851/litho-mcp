@@ -76,15 +76,18 @@ describe("pickLocale", () => {
     "zh",
     "zh-CN",
     "zh-SG",
+    "zh-MY",
+    "zh-US",
     "zh-Hans",
     "zh-Hans-CN",
     "zh-Hans-HK",
-    "en-US",
-    "ja-JP",
-    "zhx-TW",
-    "",
-    undefined,
-  ])("maps %s to en", (tag) => expect(pickLocale(tag)).toBe("en"));
+    "zh_CN",
+    "ZH-cn",
+    "zh-CN-u-nu-hant",
+  ])("maps %s to zh-CN", (tag) => expect(pickLocale(tag)).toBe("zh-CN"));
+
+  it.each(["en-US", "ja-JP", "zhx-TW", "", undefined])("maps %s to en", (tag) =>
+    expect(pickLocale(tag)).toBe("en"));
 });
 
 describe("STRINGS", () => {
@@ -102,26 +105,29 @@ describe("STRINGS", () => {
     "replaceDelay",
   ] as const;
 
-  it("has every key, non-empty, in both locales", () => {
-    for (const locale of ["en", "zh-TW"] as const) {
+  it("has every key, non-empty, in every locale", () => {
+    for (const locale of ["en", "zh-TW", "zh-CN"] as const) {
       for (const key of keys) expect(STRINGS[locale][key].length).toBeGreaterThan(0);
       expect(Object.keys(STRINGS[locale]).sort()).toEqual([...keys].sort());
     }
   });
 
-  it("explains an unreadable photo format in both locales", () => {
+  it("explains an unreadable photo format in every locale", () => {
     expect(STRINGS.en.decodeFailed).toContain("JPEG, PNG or WebP");
     expect(STRINGS["zh-TW"].decodeFailed).toContain("JPEG、PNG 或 WebP");
+    expect(STRINGS["zh-CN"].decodeFailed).toContain("JPEG、PNG 或 WebP");
   });
 
-  it("says a photo is still too large after shrinking, in both locales", () => {
+  it("says a photo is still too large after shrinking, in every locale", () => {
     expect(STRINGS.en.tooLarge).toBe("This photo is still too large after shrinking. Choose another photo.");
     expect(STRINGS["zh-TW"].tooLarge).toBe("這張照片縮小後仍然太大，請改選另一張照片。");
+    expect(STRINGS["zh-CN"].tooLarge).toBe("这张照片缩小后仍然太大，请换一张照片。");
   });
 
-  it("says when a replaced photo can be used, in both locales", () => {
+  it("says when a replaced photo can be used, in every locale", () => {
     expect(STRINGS.en.replaceDelay).toBe("Claude can use the new photo in about a minute.");
     expect(STRINGS["zh-TW"].replaceDelay).toBe("約一分鐘後 Claude 才能使用新照片。");
+    expect(STRINGS["zh-CN"].replaceDelay).toBe("大约一分钟后 Claude 才能使用新照片。");
   });
 });
 

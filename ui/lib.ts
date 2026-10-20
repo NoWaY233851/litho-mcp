@@ -1,6 +1,6 @@
 // Pure helpers for the widget. Nothing here touches the DOM, so vitest can run it on Node.
 
-export type Locale = "en" | "zh-TW";
+export type Locale = "en" | "zh-TW" | "zh-CN";
 
 /** Scales (w, h) to fit a max x max box, keeping the aspect ratio and never upscaling. */
 export function fitWithin(w: number, h: number, max: number): { w: number; h: number } {
@@ -37,10 +37,10 @@ export function formatMeta(sc: {
 }
 
 /**
- * Only English and Traditional Chinese copy ships, so Simplified Chinese locales get English
- * rather than a script their reader did not choose (ADR 0005).
+ * Chinese locales get the copy for their script (ADR 0005). Traditional means an explicit Hant
+ * script, or, with no script, Taiwan, Hong Kong or Macau. Every other Chinese locale, bare `zh`
+ * included, gets Simplified, the script most readers of an unmarked `zh` expect.
  *
- * Traditional means an explicit Hant script, or, with no script, Taiwan, Hong Kong or Macau.
  * An explicit script wins over the region. Subtags after the first singleton (such as
  * `-u-nu-hans`) are extensions and are ignored. `_` is accepted as a separator because some
  * platforms report `zh_TW`.
@@ -51,9 +51,9 @@ export function pickLocale(lang: string | undefined): Locale {
   const tags = singleton === -1 ? subtags : subtags.slice(0, singleton);
   if (tags[0] !== "zh") return "en";
   const script = tags.find((t, i) => i > 0 && t.length === 4);
-  if (script) return script === "hant" ? "zh-TW" : "en";
+  if (script) return script === "hant" ? "zh-TW" : "zh-CN";
   const region = tags.find((t, i) => i > 0 && (t.length === 2 || /^\d{3}$/.test(t)));
-  return region === "tw" || region === "hk" || region === "mo" ? "zh-TW" : "en";
+  return region === "tw" || region === "hk" || region === "mo" ? "zh-TW" : "zh-CN";
 }
 
 export const STRINGS: Record<
@@ -99,6 +99,19 @@ export const STRINGS: Record<
     decodeFailed: "這台裝置無法讀取這張照片的格式。請改選 JPEG、PNG 或 WebP，或先將照片匯出。",
     tooLarge: "這張照片縮小後仍然太大，請改選另一張照片。",
     replaceDelay: "約一分鐘後 Claude 才能使用新照片。",
+  },
+  "zh-CN": {
+    generating: "图片生成中…",
+    seconds: "秒",
+    choosePhoto: "选择照片",
+    uploading: "上传中…",
+    uploaded: "已上传",
+    replacePhoto: "更换照片",
+    expired: "这张图片已无法显示，可能已过期。",
+    uploadFailed: "上传失败，请重试。",
+    decodeFailed: "此设备无法读取这张照片的格式。请改选 JPEG、PNG 或 WebP，或先将照片导出。",
+    tooLarge: "这张照片缩小后仍然太大，请换一张照片。",
+    replaceDelay: "大约一分钟后 Claude 才能使用新照片。",
   },
 };
 

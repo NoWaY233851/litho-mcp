@@ -1,6 +1,8 @@
 # litho-mcp
 [![CI](https://github.com/NoWaY233851/litho-mcp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/NoWaY233851/litho-mcp/actions/workflows/ci.yml?query=branch%3Amain)
 
+English | [繁體中文](README.zh-TW.md) | [简体中文](README.zh-CN.md)
+
 litho-mcp is a remote [MCP](https://modelcontextprotocol.io) server that runs on Vercel as a single Node.js function. Add it to claude.ai as a custom connector and Claude can generate and edit images through [OpenRouter](https://openrouter.ai) during a conversation. Results appear inline in the chat. Its design was validated on claude.ai web, Claude desktop and the Claude iOS app.
 
 Each deployment serves one person: the one who deployed it. There is no database and no sign-in flow. The connector authenticates with a shared secret sent as a request header.
@@ -13,6 +15,15 @@ Tools:
 - `list_models`: list OpenRouter image models and the parameters each supports.
 
 The design, the alternatives that were rejected and the reasons are recorded in [docs/design/](docs/design/README.md).
+
+## Showcase
+
+The image appears inline under the tool call, captioned with the model, the aspect ratio and the cost. On the left is claude.ai on the web; on the right, the Claude iOS app.
+
+<p>
+  <img src="docs/assets/showcase/claude-web.webp" width="63%" alt="claude.ai on the web: asked for a capybara, Claude calls generate_image and the picture appears inline, captioned gpt-image-2.5-flare · 4:3 · $0.006.">
+  <img src="docs/assets/showcase/claude-ios.webp" width="34%" alt="The Claude iOS app: asked for a photo of a maple leaf in the fall, the picture appears inline with the same kind of caption.">
+</p>
 
 ## Requirements
 
