@@ -18,6 +18,15 @@ litho-mcp 是一個在 Vercel 上以單一 Node.js 函式執行的遠端 [MCP](h
 
 設計內容、被否決的替代方案與理由，都記錄在 [docs/design/](docs/design/README.md)（英文）。
 
+## 展示
+
+圖片直接顯示在工具呼叫下方，下面標示模型、長寬比與費用。左邊是 claude.ai 網頁版，右邊是 Claude iOS App。
+
+<p>
+  <img src="docs/assets/showcase/claude-web.webp" width="63%" alt="claude.ai 網頁版：要求一張水豚的圖片，Claude 呼叫 generate_image，圖片直接顯示在對話中，下方標示 gpt-image-2.5-flare · 4:3 · $0.006。">
+  <img src="docs/assets/showcase/claude-ios.webp" width="34%" alt="Claude iOS App：要求一張秋天楓葉的照片，圖片直接顯示在對話中，下方有同樣格式的標示。">
+</p>
+
 ## 需求
 
 - 一個在自訂連接器中有 **Request headers**（請求標頭）選項的 claude.ai 帳號。這項功能目前是測試版，開放範圍有限。沒有它，litho-mcp 無法驗證身分，也就無法使用（見 [ADR 0009](docs/design/0009-connector-secret-header.md)）。

@@ -16,6 +16,15 @@ Tools:
 
 The design, the alternatives that were rejected and the reasons are recorded in [docs/design/](docs/design/README.md).
 
+## Showcase
+
+The image appears inline under the tool call, captioned with the model, the aspect ratio and the cost. On the left is claude.ai on the web; on the right, the Claude iOS app.
+
+<p>
+  <img src="docs/assets/showcase/claude-web.webp" width="63%" alt="claude.ai on the web: asked for a capybara, Claude calls generate_image and the picture appears inline, captioned gpt-image-2.5-flare · 4:3 · $0.006.">
+  <img src="docs/assets/showcase/claude-ios.webp" width="34%" alt="The Claude iOS app: asked for a photo of a maple leaf in the fall, the picture appears inline with the same kind of caption.">
+</p>
+
 ## Requirements
 
 - A claude.ai account that has the **Request headers** option for custom connectors. This feature is in beta with limited availability. Without it litho-mcp cannot authenticate, so it cannot be used (see [ADR 0009](docs/design/0009-connector-secret-header.md)).
