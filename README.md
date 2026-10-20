@@ -165,6 +165,8 @@ Images are deleted `RETENTION_DAYS` days after creation (default 30). Cleanup is
 
 ## Security notes
 
+To report a vulnerability, follow [SECURITY.md](SECURITY.md) and do not open a public issue.
+
 - Image links are capability URLs: the Blob store is public, and anyone holding a link can view that image. Links are unguessable and are not listed anywhere, but treat them like shared secrets. Images are deleted after the retention period.
 - Vercel Blob counts every download against the Hobby data-transfer quota, cache hits included: 10 GB a month (checked 2026-10-18 at <https://vercel.com/docs/vercel-blob/usage-and-pricing>, updated 2026-09-23). Going over pauses Blob access for up to 30 days, so a widely shared link can pause the deployment.
 - To revoke one leaked image, run `npx vercel blob del <url>` (flags checked against Vercel CLI 64.5.0; see the `--oidc-token` note under [Development](#development)). Because of CDN propagation, the image can stay reachable for up to about 60 seconds after deletion.

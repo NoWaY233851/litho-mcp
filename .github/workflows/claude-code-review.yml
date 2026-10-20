@@ -22,7 +22,14 @@ jobs:
     # Workflows started by Dependabot get no repository secrets, and the action
     # refuses bot actors by default, so a review of a Dependabot pull request
     # could only fail.
-    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    # Pull requests from forks could only fail too: their runs get no
+    # repository secrets, and the action refuses actors without write access.
+    # Skipping them shows outside contributions a skipped check instead of a
+    # failed one. Collaborators get a review by opening the pull request from a
+    # branch of this repository.
+    if: |
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository
 
     runs-on: ubuntu-latest
     # A full review fans out to several subagents and takes minutes, not hours.

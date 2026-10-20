@@ -82,14 +82,19 @@ describe("loadConfig: Blob settings", () => {
     expect((error as Error).message).not.toContain("example");
   });
 
-  it("rejects hyphen edges and labels the URL parser cannot round-trip, without echoing the value", () => {
-    for (const id of ["xn--abc", "-abc", "abc-", "-", "xn--a-b-c"]) {
+  it("rejects hyphen edges and reserved labels such as xn--, without echoing the value", () => {
+    // "xn--nxasmq6b" (valid punycode) and "ab--cd" parse as hosts on every Node release and "xn--abc"
+    // (invalid punycode) parses on some, so only the reserved-label rule rejects them reliably.
+    for (const id of ["xn--abc", "XN--abc", "xn--nxasmq6b", "ab--cd", "-abc", "abc-", "-", "xn--a-b-c"]) {
       expect(() => loadConfig({ ...fullEnv, BLOB_STORE_ID: id }), id).toThrow(/^invalid env: BLOB_STORE_ID$/);
     }
-    expect(() => loadConfig({ ...fullEnv, BLOB_READ_WRITE_TOKEN: "vercel_blob_rw_-abc_fake" })).toThrow(
-      /^invalid env: BLOB_READ_WRITE_TOKEN$/,
-    );
+    for (const id of ["-abc", "xn--abc"]) {
+      expect(() => loadConfig({ ...fullEnv, BLOB_READ_WRITE_TOKEN: `vercel_blob_rw_${id}_fake` }), id).toThrow(
+        /^invalid env: BLOB_READ_WRITE_TOKEN$/,
+      );
+    }
     expect(loadConfig({ ...fullEnv, BLOB_STORE_ID: "a-b-1" }).blobStoreId).toBe("a-b-1");
+    expect(loadConfig({ ...fullEnv, BLOB_STORE_ID: "abc--d" }).blobStoreId).toBe("abc--d");
     expect(loadConfig({ ...fullEnv, BLOB_STORE_ID: "a".repeat(63) }).blobStoreId).toBe("a".repeat(63));
   });
 
