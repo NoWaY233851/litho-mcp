@@ -79,6 +79,12 @@ So the DNS checks used DNS over HTTPS through Cloudflare's resolver, and DNS reb
 - "This server's own image URL" now means this deployment's Blob store URL, not `<origin>/img/<id>`.
 - The Workers-specific context moved to the historical note above.
 
+## Revision (2026-10-20)
+
+- All reference reads of one `edit_image` call, stored ids and URLs alike, share one 40 MiB budget. Each kept chunk is charged before it is held, and a download's declared length is charged up front, before its buffer is allocated.
+- A budget failure is reported with the total-size message, not a per-URL reason.
+- The loads stay parallel so one 15-second deadline covers them. Loading them one by one would stack the per-load deadlines.
+
 ## Validation (2026-10-18 and 2026-10-19, acceptance)
 
 Tested on the production deployment from claude.ai web.
