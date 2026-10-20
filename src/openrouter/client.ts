@@ -14,6 +14,7 @@ import { IMAGE_PARAMS, type ImageParams } from "./models.js";
 import {
   MAX_PASSTHROUGH,
   OpenRouterError,
+  SERVER_ERROR_CODES,
   UNSUPPORTED_OUTPUT_MESSAGE,
   truncate,
   type KeyInfo,
@@ -93,7 +94,9 @@ function parseJson(text: string): unknown {
 
 /** Builds the error from an OpenRouter `error` object; `status` is the HTTP status it applies to. */
 function fromErrorObject(status: number, err: Obj | undefined): OpenRouterError {
-  const code = typeof err?.code === "string" && err.code !== "" ? err.code : `http_${status}`;
+  // A string code that collides with one of the server's own would be mistaken for a local failure.
+  const code =
+    typeof err?.code === "string" && err.code !== "" && !SERVER_ERROR_CODES.has(err.code) ? err.code : `http_${status}`;
   const message = typeof err?.message === "string" && err.message !== "" ? err.message : `HTTP ${status}`;
   const metadata = isObj(err?.metadata) ? err.metadata : undefined;
   return new OpenRouterError(status, code, truncate(message, MAX_PASSTHROUGH), metadata);

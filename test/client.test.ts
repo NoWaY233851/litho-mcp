@@ -374,9 +374,16 @@ describe("createImage errors inside a 200 body", () => {
       const e = await failure(createImage(cfg, req(), f));
       expect(e.status).toBe(200);
       expect(e.code).toBe(code === "server_error" ? "server_error" : "http_200");
-      expect(describeOpenRouterError(e, null)).toBe("OpenRouter error 200: boom");
+      expect(describeOpenRouterError(e, null)).toBe("OpenRouter reported an error after accepting the request: boom");
     },
   );
+
+  it("an in-body error borrowing a server code is passed through as an upstream error", async () => {
+    const { f } = inBody({ code: "empty_response", message: "boom" });
+    const e = await failure(createImage(cfg, req(), f));
+    expect(e.code).toBe("http_200");
+    expect(describeOpenRouterError(e, null)).toBe("OpenRouter reported an error after accepting the request: boom");
+  });
 
   it("cuts a long in-body message to 500 characters", async () => {
     const { f } = inBody({ code: 400, message: "z".repeat(2000) });
@@ -399,6 +406,13 @@ describe("createImage failures", () => {
     expect(e.code).toBe("content_policy_violation");
     expect(e.message).toBe("bad");
     expect(e.metadata).toEqual({ provider_name: "OpenAI" });
+  });
+
+  it("ignores an upstream string code that is one of the server's own codes", async () => {
+    const { f } = recorder(() => json({ error: { code: "timeout", message: "slow upstream" } }, 504));
+    const e = await failure(createImage(cfg, req(), f));
+    expect(e.code).toBe("http_504");
+    expect(describeOpenRouterError(e, null)).toBe("The OpenRouter generation failed or timed out (HTTP 504). The call can be retried.");
   });
 
   it("falls back to http_<status> for a numeric or empty code", async () => {

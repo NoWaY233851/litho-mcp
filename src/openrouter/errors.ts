@@ -28,6 +28,19 @@ function pickMetadata(metadata: Record<string, unknown> | undefined): Record<str
   return kept;
 }
 
+// The codes client.ts raises itself. describeOpenRouterError() treats them as local failures with
+// their own billing wording, so an upstream error body must not be able to claim one: OpenRouter
+// documents `timeout` as an error_type value, and an Images stream error carries a free-form
+// string code (https://openrouter.ai/docs/api/reference/errors-and-debugging).
+export const SERVER_ERROR_CODES: ReadonlySet<string> = new Set([
+  "timeout",
+  "network_error",
+  "response_interrupted",
+  "invalid_response",
+  "empty_response",
+  "unsupported_output",
+]);
+
 /**
  * Callers must show `describeOpenRouterError(e, key)` and never branch on `status` alone: some
  * codes reuse a status with different billing semantics. `network_error` is status 502 but, unlike
@@ -38,9 +51,8 @@ export class OpenRouterError extends Error {
 
   constructor(
     readonly status: number,
-    // Always a string: the error body's code when it is a non-empty string, otherwise
-    // "http_<status>", or one of the codes this module raises itself (timeout, network_error,
-    // response_interrupted, invalid_response, empty_response, unsupported_output).
+    // Always a string: the error body's code when it is a non-empty string that is not in
+    // SERVER_ERROR_CODES, otherwise "http_<status>", or one of the server's own codes.
     readonly code: string,
     message: string,
     metadata?: Record<string, unknown>,
@@ -139,6 +151,11 @@ export function describeOpenRouterError(e: OpenRouterError, key: KeyInfo | null)
   }
   if ([408, 504, 524, 529].includes(e.status)) {
     return `The OpenRouter generation failed or timed out (HTTP ${e.status}). The call can be retried.`;
+  }
+  // An error object inside a 2xx body. OpenRouter documents the all-or-nothing billing for
+  // generations that fail, not for this shape, so no billing claim is made either way (ADR 0003).
+  if (e.status >= 200 && e.status <= 299) {
+    return `OpenRouter reported an error after accepting the request: ${truncate(e.message)}`;
   }
   return `OpenRouter error ${e.status}: ${truncate(e.message)}`;
 }
