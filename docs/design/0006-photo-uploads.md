@@ -127,7 +127,7 @@ Tested on the production deployment from claude.ai web (macOS, Chrome), Claude d
   3. 2048 px, quality 0.7
   4. 1536 px, quality 0.8
 
-  If no step fits, the widget reports that the upload failed. The ladder is defined in `ui/lib.ts`.
+  If no step fits, the widget reports that the photo is still too large after shrinking. The ladder is defined in `ui/lib.ts`.
 - The server-side 10 MiB check on uploads is unchanged. It no longer limits the widget in practice, because the transport cap is lower, and stays as defense in depth for other callers.
 
 ## Revision (2026-10-19)

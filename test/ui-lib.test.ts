@@ -92,6 +92,7 @@ describe("STRINGS", () => {
     "expired",
     "uploadFailed",
     "decodeFailed",
+    "tooLarge",
     "replaceDelay",
   ] as const;
 
@@ -105,6 +106,11 @@ describe("STRINGS", () => {
   it("explains an unreadable photo format in both locales", () => {
     expect(STRINGS.en.decodeFailed).toContain("JPEG, PNG or WebP");
     expect(STRINGS["zh-TW"].decodeFailed).toContain("JPEG、PNG 或 WebP");
+  });
+
+  it("says a photo is still too large after shrinking, in both locales", () => {
+    expect(STRINGS.en.tooLarge).toBe("This photo is still too large after shrinking. Choose another photo.");
+    expect(STRINGS["zh-TW"].tooLarge).toBe("這張照片縮小後仍然太大，請改選另一張照片。");
   });
 
   it("says when a replaced photo can be used, in both locales", () => {

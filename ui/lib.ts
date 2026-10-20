@@ -68,6 +68,7 @@ export const STRINGS: Record<
     | "expired"
     | "uploadFailed"
     | "decodeFailed"
+    | "tooLarge"
     | "replaceDelay",
     string
   >
@@ -83,6 +84,7 @@ export const STRINGS: Record<
     uploadFailed: "Upload failed. Try again.",
     decodeFailed:
       "This device can't read this photo's format. Choose a JPEG, PNG or WebP, or export the photo first.",
+    tooLarge: "This photo is still too large after shrinking. Choose another photo.",
     replaceDelay: "Claude can use the new photo in about a minute.",
   },
   "zh-TW": {
@@ -95,6 +97,7 @@ export const STRINGS: Record<
     expired: "這張圖片已無法顯示，可能已超過保存期限。",
     uploadFailed: "上傳失敗，請再試一次。",
     decodeFailed: "這台裝置無法讀取這張照片的格式。請改選 JPEG、PNG 或 WebP，或先將照片匯出。",
+    tooLarge: "這張照片縮小後仍然太大，請改選另一張照片。",
     replaceDelay: "約一分鐘後 Claude 才能使用新照片。",
   },
 };

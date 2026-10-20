@@ -26,7 +26,7 @@ type ImageResult = {
 };
 
 // Stored as a string key so a locale change re-renders the message in the new language.
-type Notice = { key: "uploadFailed" | "decodeFailed"; detail?: string };
+type Notice = { key: "uploadFailed" | "decodeFailed" | "tooLarge"; detail?: string };
 
 // Upload phases: "probing" until the mount probe settles, "empty" when nothing is stored,
 // "remote" for a photo found at the pre-assigned URL, "local" for the canvas just uploaded.
@@ -301,7 +301,8 @@ async function uploadPhoto(file: File): Promise<void> {
     bitmap.close();
   }
   if (data === undefined || !canvas) {
-    fail({ key: "uploadFailed" });
+    // Every ladder step stayed over the cap; retrying the same photo can't help.
+    fail({ key: "tooLarge" });
     return;
   }
 
