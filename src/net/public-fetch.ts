@@ -209,7 +209,11 @@ async function request(httpGet: HttpGet, url: URL, pinned: PinnedAddress, signal
 }
 
 // A chunk is charged to the shared budget before it is kept, so downloads running in parallel
-// stop as soon as together they pass the total instead of after each has read its own cap.
+// stop as soon as together they pass the total instead of after each has read its own cap. The
+// buffer sized from a declared Content-Length is charged before it is allocated: a server can
+// declare 10 MiB and then stall, and sixteen of those would otherwise hold 160 MiB of buffers
+// while the budget had seen almost nothing. A body shorter than declared keeps its prepayment
+// charged; the budget is a pessimistic bound.
 async function readBody(response: Response, signal: AbortSignal, budget?: ReadBudget): Promise<Uint8Array> {
   const declared = response.headers.get("content-length");
   // An unusable header is ignored: the streaming count below is what enforces the limit.
@@ -222,7 +226,16 @@ async function readBody(response: Response, signal: AbortSignal, budget?: ReadBu
   // The body is copied straight into one buffer. Keeping the chunks as they arrive would let a
   // server that sends one byte per write multiply the memory held for the same payload by the
   // per-chunk overhead (measured at over 200x with undici).
-  let buffer = new Uint8Array(initialCapacity(declared));
+  const capacity = initialCapacity(declared);
+  let charged = 0;
+  if (budget && declared !== null && /^\d+$/.test(declared)) {
+    if (!budget.take(capacity)) {
+      discard(response);
+      throw new PublicFetchError("over_budget");
+    }
+    charged = capacity;
+  }
+  let buffer = new Uint8Array(capacity);
   let total = 0;
   const reader = response.body.getReader();
   try {
@@ -230,7 +243,11 @@ async function readBody(response: Response, signal: AbortSignal, budget?: ReadBu
       const { done, value } = await abortable(signal, reader.read());
       if (done) break;
       if (total + value.byteLength > MAX_IMAGE_BYTES) throw new PublicFetchError("too_large");
-      if (budget && !budget.take(value.byteLength)) throw new PublicFetchError("over_budget");
+      if (budget) {
+        const extra = Math.max(0, total + value.byteLength - charged);
+        if (!budget.take(extra)) throw new PublicFetchError("over_budget");
+        charged += extra;
+      }
       if (total + value.byteLength > buffer.byteLength) {
         const grown = new Uint8Array(Math.min(Math.max(buffer.byteLength * 2, total + value.byteLength), MAX_IMAGE_BYTES));
         grown.set(buffer.subarray(0, total));

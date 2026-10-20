@@ -348,6 +348,35 @@ describe("fetchPublicImage: response handling", () => {
     expect(state.pulled).toBeLessThanOrEqual(4);
   });
 
+  it("charges the buffer sized from a declared length before reading, so a stalled download cannot hide it", async () => {
+    const budget = readBudget(40 * 1024 * 1024);
+    const declared = { "content-length": String(MAX_IMAGE_BYTES) };
+    const fetchWith = (body: ReadableStream<Uint8Array>): Promise<string> => {
+      const s = scripted({ "https://example.com/a.png": () => new Response(body, { status: 200, headers: declared }) });
+      return reasonOf(fetchPublicImage("https://example.com/a.png", { resolve: s.resolve, httpGet: s.httpGet, budget }));
+    };
+    // Each of the first four declares 10 MiB and ends at once; the prepayment stays charged.
+    for (let i = 0; i < 4; i++) expect(await fetchWith(countingStream(0, 1).body)).toBe("not_image");
+    const fifth = countingStream(3, 1024);
+    expect(await fetchWith(fifth.body)).toBe("over_budget");
+    // A stream pulls its first chunk when it is created; nothing is read from it after that.
+    expect(fifth.state.pulled).toBeLessThanOrEqual(1);
+    expect(fifth.state.cancelled).toBe(true);
+  });
+
+  it("refuses a declared length larger than what the budget has left before reading", async () => {
+    const { body, state } = countingStream(3, 1024);
+    const s = scripted({
+      "https://example.com/a.png": () => new Response(body, { status: 200, headers: { "content-length": "2048" } }),
+    });
+    const reason = await reasonOf(
+      fetchPublicImage("https://example.com/a.png", { resolve: s.resolve, httpGet: s.httpGet, budget: readBudget(1024) }),
+    );
+    expect(reason).toBe("over_budget");
+    expect(state.pulled).toBeLessThanOrEqual(1);
+    expect(state.cancelled).toBe(true);
+  });
+
   it("does not trust a Content-Length that understates the body", async () => {
     const { body } = countingStream(12, 1024 * 1024);
     expect(await reasonOf(get(() => new Response(body, { status: 200, headers: { "content-length": "10" } })))).toBe("too_large");

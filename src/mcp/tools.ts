@@ -319,8 +319,9 @@ export async function editImage(deps: Deps, args: EditArgs, options: EditOptions
     // large id cannot multiply what is held in memory. Every occurrence still counts toward
     // the total below because each one is sent to OpenRouter. The loads run in parallel so one
     // 15 s deadline covers them all (sequential loads would stack it up to 16 times, past the
-    // tool's time limit), and they share one byte budget so together they never hold more than
-    // the total. allSettled so the failure reported is the first in input order, not the fastest.
+    // tool's time limit), and they share one byte budget that every read charges for the buffer
+    // it sizes from a declared length and for each chunk it keeps, so together they hold at most
+    // about the total. allSettled so the failure reported is the first in input order, not the fastest.
     const fetchPublic = options.fetchPublic ?? fetchPublicImage;
     const budget = readBudget(MAX_TOTAL_REFERENCE_BYTES);
     const pending = new Map<string, Promise<Loaded>>();
