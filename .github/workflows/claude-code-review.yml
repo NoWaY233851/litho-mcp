@@ -19,11 +19,10 @@ concurrency:
 
 jobs:
   claude-review:
-    # Optional: Filter by PR author
-    # if: |
-    #   github.event.pull_request.user.login == 'external-contributor' ||
-    #   github.event.pull_request.user.login == 'new-developer' ||
-    #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
+    # Workflows started by Dependabot get no repository secrets, and the action
+    # refuses bot actors by default, so a review of a Dependabot pull request
+    # could only fail.
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
 
     runs-on: ubuntu-latest
     # A full review fans out to several subagents and takes minutes, not hours.
@@ -39,6 +38,7 @@ jobs:
       # trailing comment. Whoever controls an action's repository can point a
       # tag at different code but cannot change what a SHA names, and this job
       # holds the Claude token and can request an OIDC token.
+      # Dependabot proposes updates (.github/dependabot.yml).
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
