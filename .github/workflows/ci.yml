@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A newer push to a pull request makes a run of its old head pointless. Pushes
+# to main are grouped by commit, so every commit on main keeps its own result.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+# The job only reads the checkout. It needs no secrets and no write access, so
+# runs for pull requests from forks behave the same as any other.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      # A failure on one Node version should not hide the result on the other.
+      fail-fast: false
+      matrix:
+        # The floor that package.json engines promises, and Node 24, the
+        # runtime the Vercel deployment was validated on (ADR 0008).
+        node: ['22.19', '24']
+
+    steps:
+      # Actions are pinned to full commit SHAs, with the matching release in a
+      # trailing comment. Whoever controls an action's repository can point a
+      # tag at different code but cannot change what a SHA names.
+      # Dependabot proposes updates (.github/dependabot.yml).
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # Nothing here pushes or calls the GitHub API, so the token is not
+          # left in the git config for later steps to read.
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The check needs no build output. Running it before the tests reports a
+      # leak even when a test fails.
+      - name: Check for personal information
+        run: npm run hygiene
+
+      - name: Test
+        run: npm test
+
+      - name: Typecheck
+        run: npm run typecheck
