@@ -47,9 +47,16 @@ jobs:
       # holds the Claude token and can request an OIDC token.
       # Dependabot proposes updates (.github/dependabot.yml).
       - name: Checkout repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
+          # From v6 on, checkout keeps its token in a separate file that the git
+          # config pulls in through includeIf. The Claude action removes the
+          # checkout token only from .git/config and its include.path files, so
+          # this one would stay active and override the action's own token
+          # (anthropics/claude-code-action#1721). A review pushes nothing, but
+          # its git setup stays the same as in claude.yml.
+          persist-credentials: false
 
       - name: Run Claude Code Review
         id: claude-review
