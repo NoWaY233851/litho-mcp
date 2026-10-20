@@ -1,4 +1,5 @@
 # litho-mcp
+[![CI](https://github.com/NoWaY233851/litho-mcp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/NoWaY233851/litho-mcp/actions/workflows/ci.yml?query=branch%3Amain)
 
 litho-mcp is a remote [MCP](https://modelcontextprotocol.io) server that runs on Vercel as a single Node.js function. Add it to claude.ai as a custom connector and Claude can generate and edit images through [OpenRouter](https://openrouter.ai) during a conversation. Results appear inline in the chat. Its design was validated on claude.ai web, Claude desktop and the Claude iOS app.
 
