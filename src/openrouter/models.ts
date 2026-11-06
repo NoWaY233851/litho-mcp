@@ -9,6 +9,7 @@
 // original transport errors never reach a message, and this module logs nothing.
 
 import type { Config } from "../config.js";
+import { truncate } from "./errors.js";
 
 export const IMAGE_PARAMS = [
   "aspect_ratio",
@@ -221,7 +222,7 @@ export function validateRequest(
   // so the paid result would be discarded.
   const format = params.output_format;
   if (typeof format === "string" && !STORABLE_FORMATS.includes(format.toLowerCase())) {
-    return `Model "${model.id}": ${format.toUpperCase()} output is not supported. Use output_format png, jpeg or webp where the model offers it.`;
+    return `Model "${model.id}": ${truncate(format, 20).toUpperCase()} output is not supported. Use output_format png, jpeg or webp where the model offers it.`;
   }
 
   const limits = referenceLimits(model);

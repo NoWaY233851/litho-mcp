@@ -246,6 +246,10 @@ describe("validateRequest and summarizeModel", () => {
     }
   });
 
+  it("cuts a long rejected output_format in the message", () => {
+    expect(validateRequest(flare, { output_format: "x".repeat(100_000) }, 0, "generate")!.length).toBeLessThan(200);
+  });
+
   it("includes the model id in messages", () => {
     expect(validateRequest(k3, {}, 9, "edit")).toContain("krea/k3-edit");
     expect(validateRequest(flash, {}, 1, "edit")).toContain("recraft/recraft-v4.1-flash");
