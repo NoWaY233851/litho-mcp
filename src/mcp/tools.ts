@@ -5,7 +5,7 @@ import { base64ToBytes, bytesToBase64 } from "../images/base64.js";
 import { newImageId, parseImageId } from "../images/ids.js";
 import { READ_BUDGET_EXCEEDED_MESSAGE, STORED_TOO_LARGE_MESSAGE, readBudget, type ReadBudget } from "../images/limits.js";
 import { sniffImage, type ImageInfo } from "../images/sniff.js";
-import { makeThumbnail } from "../images/thumbnail.js";
+import { makeThumbnail, type Animation } from "../images/thumbnail.js";
 import { MAX_IMAGE_BYTES, MAX_IMAGE_SIDE, PublicFetchError, fetchPublicImage } from "../net/public-fetch.js";
 import { createImage, getKeyInfo, type CreatedImage } from "../openrouter/client.js";
 import { formatCost } from "../openrouter/cost.js";
@@ -119,6 +119,15 @@ export async function saveAndShow(
   }
   const thumbnail = await makeThumbnail(deps.thumbnailer, created.bytes);
   if (!thumbnail) deps.log("thumbnail unavailable");
+  // Like the thumbnail, missing animation info never fails a paid generation.
+  let animation: Animation | null = null;
+  if (created.info.mime === "image/gif") {
+    try {
+      animation = await deps.thumbnailer.animation(created.bytes);
+    } catch {
+      deps.log("animation info unavailable");
+    }
+  }
   return imageResult({
     id,
     url,
@@ -128,6 +137,7 @@ export async function saveAndShow(
     costUsd: created.costUsd,
     ...(meta.parent !== undefined ? { parent: meta.parent } : {}),
     thumbnail,
+    ...(created.info.mime === "image/gif" ? { animation } : {}),
   });
 }
 

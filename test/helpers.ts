@@ -19,6 +19,7 @@ export const fullEnv = {
 // independent of sharp.
 export const fakeThumbnailer: Thumbnailer = {
   toWebp: async () => new Uint8Array([0x52, 0x49, 0x46, 0x46]),
+  animation: async () => ({ frames: 1, delaysMs: [], loop: 0 }),
 };
 
 export function fakeDeps(overrides: Partial<Deps> = {}): Deps {

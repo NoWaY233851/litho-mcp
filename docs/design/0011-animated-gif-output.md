@@ -1,6 +1,6 @@
 # 0011. Animated GIF output
 
-- Status: Accepted. Extends the output formats of [0003](0003-model-agnostic-openrouter.md) and [0010](0010-vercel-blob-storage.md). Not yet validated on a deployment.
+- Status: Accepted. Extends the output formats of [0003](0003-model-agnostic-openrouter.md) and [0010](0010-vercel-blob-storage.md). Validated in production on 2026-11-06. Revised on 2026-11-06 for Claude's preview.
 - Date: 2026-11-05
 
 ## Context
@@ -21,3 +21,14 @@
 
 - No real GIF has gone through OpenRouter yet. The first call shows whether the route accepts gif and the frame settings, and what a GIF costs and weighs.
 - GIFs are larger than stills, so they use more of the Blob transfer quota.
+
+## Validation (2026-11-06)
+
+- A GIF generated through OpenRouter in production was stored and animated in the widget, so the route accepts `output_format: gif`.
+- Claude couldn't tell whether it was animated. Its preview was the first frame only, and its sandbox's network allowlist blocked the Blob host, so it couldn't download the image.
+
+## Revision (2026-11-06)
+
+- For a GIF, the result now tells Claude what the animation is: the frame count, the timing and the loop count. A single-frame GIF is reported as not animated.
+- An animated GIF's preview is a contact sheet instead of the first frame: up to 9 frames, evenly spaced with the first and last included, in a grid read left to right, then top to bottom. Other formats keep the plain preview.
+- Building the sheet decodes up to 9 frames, one at a time, which adds a fraction of a second to a GIF result.
