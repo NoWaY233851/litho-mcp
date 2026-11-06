@@ -1,6 +1,6 @@
 # 0003. Model-agnostic via the OpenRouter Image API
 
-- Status: Accepted. Revised on 2026-10-18 and 2026-10-20 for billing-accurate error messages, and on 2026-11-05 for the default model and output formats. Costs observed in acceptance on 2026-10-18 and 2026-10-19.
+- Status: Accepted. Revised on 2026-10-18 and 2026-10-20 for billing-accurate error messages, and on 2026-11-05 for the default model and output formats. GIF output added by [0011](0011-animated-gif-output.md). Costs observed in acceptance on 2026-10-18 and 2026-10-19.
 - Date: 2026-10-16
 
 ## Context
@@ -67,7 +67,7 @@ Remaining spend is available from `GET /api/v1/key`.
 - Unknown models point Claude to `list_models`.
 - Generating with an edit-only model points it to `edit_image`.
 - Editing with a text-only model, or with too many references, is rejected.
-- An `output_format` other than png, jpeg or webp (such as svg or gif) is always rejected, even when the model declares it. If a model returns something that isn't PNG, JPEG or WebP anyway, the call fails cleanly and nothing is stored.
+- An `output_format` other than png, jpeg, webp or gif (such as svg) is always rejected, even when the model declares it. GIF follows [0011](0011-animated-gif-output.md). If a model returns something that isn't PNG, JPEG, WebP or GIF anyway, the call fails cleanly and nothing is stored.
 
 **Tools and errors**
 - `list_models` shows, per model:
@@ -81,7 +81,7 @@ Remaining spend is available from `GET /api/v1/key`.
   - **502 from OpenRouter:** the message says the call wasn't charged and can be retried. This is the only case that claims "not charged".
   - **408, 504, 524 and 529:** the message says the call failed or timed out and can be retried, with no billing claim.
   - **The server's own 200-second timeout:** the generation may still finish and be billed, so the message says to check OpenRouter activity before retrying.
-  - **Failures after OpenRouter answered 2xx:** no image in the response, an unsupported format (SVG or anything that isn't PNG, JPEG or WebP), an unreadable response, or a body cut off mid-transfer. The message says the call may have been billed, includes the reported cost when OpenRouter gives one, and doesn't suggest a bare retry. For an empty result it suggests changing the prompt or the model.
+  - **Failures after OpenRouter answered 2xx:** no image in the response, an unsupported format (SVG or anything that isn't PNG, JPEG, WebP or GIF), an unreadable response, or a body cut off mid-transfer. The message says the call may have been billed, includes the reported cost when OpenRouter gives one, and doesn't suggest a bare retry. For an empty result it suggests changing the prompt or the model.
   - **Errors reported inside a 200 body:** classified like the same error returned as an HTTP status. When the body carries no usable status code, the message passes OpenRouter's text through as an error reported after accepting the request, with no billing claim.
   - **Upstream codes that match the server's own:** an error body's string code equal to one of the server's own codes (`timeout`, `network_error`, `response_interrupted`, `invalid_response`, `empty_response`, `unsupported_output`) is ignored, and the error is classified by its HTTP status instead.
   - **A network failure before any response:** the message says the call can be retried, with no billing claim.
@@ -132,3 +132,4 @@ Costs observed with the default model at the time, `openai/gpt-image-2.5-flare`,
 - The default model is now `openai/gpt-image-2.6-flare`. OpenRouter's catalog, read on 2026-11-05, lists the same per-token prices as `openai/gpt-image-2.5-flare` (prompt $0.000008, image output $0.00003) and the same parameters, plus `output_format`. Its description says it generates about 50% faster than GPT Image 2.5. A deployment that sets `DEFAULT_MODEL` keeps its own choice.
 - OpenRouter's GPT Image 2.6 models are the first to declare `gif` as an `output_format` (catalog read on 2026-11-05). Only PNG, JPEG and WebP are stored, so a GIF result would be billed and then discarded. Local validation therefore accepts only png, jpeg and webp as `output_format` (any letter case) and rejects any other value before OpenRouter is called, whatever the model declares. This replaces the earlier svg-only rule.
 - No per-image costs have been observed with the new default yet.
+- Later the same day, [0011](0011-animated-gif-output.md) added gif to the accepted formats.

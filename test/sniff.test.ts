@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { base64ToBytes, bytesToBase64 } from "../src/images/base64.js";
-import { sniffImage } from "../src/images/sniff.js";
+import { sniffImage, sniffStoredImage } from "../src/images/sniff.js";
 
 const bytes = (...parts: Array<number | number[] | Uint8Array>): Uint8Array =>
   Uint8Array.from(parts.flatMap((p) => (typeof p === "number" ? [p] : Array.from(p))));
@@ -244,6 +244,42 @@ describe("sniffImage: WebP", () => {
 
   it("rejects a VP8X chunk that is too short to hold the canvas size", () => {
     expect(sniffImage(riff(chunk("VP8X", [0x10, 0, 0, 0, 1, 0, 0])))).toBeNull();
+  });
+});
+
+describe("sniffStoredImage", () => {
+  const gif = (version: string, w: number, h: number): Uint8Array =>
+    bytes(ascii(`GIF${version}`), le16(w), le16(h), [0xf0, 0, 0], new Array(10).fill(0));
+
+  it("reads GIF87a and GIF89a logical screen sizes", () => {
+    expect(sniffStoredImage(gif("89a", 928, 928))).toEqual({ mime: "image/gif", width: 928, height: 928 });
+    expect(sniffStoredImage(gif("87a", 640, 480))).toEqual({ mime: "image/gif", width: 640, height: 480 });
+    expect(sniffStoredImage(gif("89a", 65535, 1))).toEqual({ mime: "image/gif", width: 65535, height: 1 });
+  });
+
+  it("reads a real 1x1 GIF", () => {
+    expect(sniffStoredImage(fromBase64("R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=="))).toEqual({
+      mime: "image/gif",
+      width: 1,
+      height: 1,
+    });
+  });
+
+  it("still accepts PNG, JPEG and WebP", () => {
+    expect(sniffStoredImage(png(3, 2))).toEqual({ mime: "image/png", width: 3, height: 2 });
+    expect(sniffStoredImage(jpeg({ w: 5, h: 4 }))).toEqual({ mime: "image/jpeg", width: 5, height: 4 });
+  });
+
+  it("rejects an unknown GIF version, a zero size and a header cut short", () => {
+    expect(sniffStoredImage(gif("88a", 10, 10))).toBeNull();
+    expect(sniffStoredImage(gif("89a", 0, 10))).toBeNull();
+    expect(sniffStoredImage(gif("89a", 10, 0))).toBeNull();
+    expect(sniffStoredImage(gif("89a", 10, 10).subarray(0, 9))).toBeNull();
+    expect(sniffStoredImage(bytes(ascii("GIF89a")))).toBeNull();
+  });
+
+  it("is not what sniffImage accepts: uploads and reference URLs stay PNG, JPEG and WebP", () => {
+    expect(sniffImage(gif("89a", 10, 10))).toBeNull();
   });
 });
 

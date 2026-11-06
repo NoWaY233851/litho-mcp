@@ -9,7 +9,7 @@ import { createMemoryStore } from "../src/images/store.js";
 import { EditArgs, editImage, openUploader, uploadImageData } from "../src/mcp/tools.js";
 import { MAX_IMAGE_BYTES, MAX_IMAGE_SIDE, PublicFetchError } from "../src/net/public-fetch.js";
 import { _resetModelCache } from "../src/openrouter/models.js";
-import { PNG_B64, fakeDeps, fakeOpenRouter, fullEnv } from "./helpers.js";
+import { GIF_B64, PNG_B64, fakeDeps, fakeOpenRouter, fullEnv } from "./helpers.js";
 
 const FLARE = "openai/gpt-image-2.5-flare";
 const KREA = "krea/k3-edit";
@@ -55,6 +55,19 @@ const refUrls = (body: Record<string, unknown> | undefined): string[] =>
   ((body?.input_references ?? []) as { image_url: { url: string } }[]).map((r) => r.image_url.url);
 
 beforeEach(() => _resetModelCache());
+
+describe("editImage: GIF references", () => {
+  it("refuses a stored GIF as a reference, by id or by its own URL, before any paid call", async () => {
+    const { or, deps, store } = setup();
+    await store.put(IMG_A, new Uint8Array(Buffer.from(GIF_B64, "base64")));
+    for (const args of [{ image_ids: [IMG_A] }, { image_urls: [store.url(IMG_A)] }]) {
+      const r = await editImage(deps, { prompt: "make it blue", ...args });
+      expect(r.isError).toBe(true);
+      expect(texts(r)[0]).toMatch(new RegExp(`Image ${IMG_A} is a GIF.*generate_image`));
+    }
+    expect(or.posts()).toHaveLength(0);
+  });
+});
 
 describe("editImage", () => {
   it("edits from an image id: the reference is sent as a data URL and the result's parent is that id", async () => {

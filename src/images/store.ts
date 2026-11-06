@@ -8,7 +8,7 @@ import {
   STORED_TOO_LARGE_MESSAGE as TOO_LARGE,
   type ReadBudget,
 } from "./limits.js";
-import { sniffImage, type ImageInfo } from "./sniff.js";
+import { sniffImage, sniffStoredImage, type ImageInfo } from "./sniff.js";
 
 export { BLOB_HOST_SUFFIX, blobBaseUrl } from "./blob-url.js";
 
@@ -85,6 +85,12 @@ function validId(id: string): { kind: ImageKind; hex: string } {
   return parsed;
 }
 
+// Generated images (img_) may be GIF; uploads (up_) keep to the input formats
+// (docs/design/0011-animated-gif-output.md).
+function sniffFor(kind: ImageKind, bytes: Uint8Array): ImageInfo | null {
+  return kind === "img" ? sniffStoredImage(bytes) : sniffImage(bytes);
+}
+
 // URL derivation shared by the real and the in-memory store, so tests exercise
 // the same own-URL rules production uses.
 function urlScheme(baseUrl: string): Pick<ImageStore, "url" | "idFromUrl"> {
@@ -130,7 +136,7 @@ export function createBlobStore(
     async put(id, bytes) {
       const { kind, hex } = validId(id);
       // The stored Content-Type comes from the bytes, never from the caller.
-      const sniffed = sniffImage(bytes);
+      const sniffed = sniffFor(kind, bytes);
       if (!sniffed) throw new Error("not a supported image");
       const replaceable = kind === "up";
       let result;
@@ -158,7 +164,8 @@ export function createBlobStore(
     },
 
     async get(id, budget) {
-      if (!parseImageId(id)) return null;
+      const parsed = parseImageId(id);
+      if (!parsed) return null;
       const url = scheme.url(id);
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), READ_TIMEOUT_MS);
@@ -176,7 +183,7 @@ export function createBlobStore(
           throw new Error(`blob read failed: HTTP ${response.status}`);
         }
         const bytes = await readBounded(response, budget);
-        const info = sniffImage(bytes);
+        const info = sniffFor(parsed.kind, bytes);
         if (!info) throw new Error("stored object is not a supported image");
         return { bytes, info, url };
       } catch (error) {
@@ -234,7 +241,7 @@ export function createMemoryStore(
 
     async put(id, bytes) {
       const { kind } = validId(id);
-      const info = sniffImage(bytes);
+      const info = sniffFor(kind, bytes);
       if (!info) throw new Error("not a supported image");
       if (kind === "img" && objects.has(id)) throw new Error("image already exists");
       objects.set(id, { bytes: bytes.slice(), info, uploadedAt: now() });

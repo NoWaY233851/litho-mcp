@@ -13,6 +13,8 @@ const PNG_BYTES = Uint8Array.from([
   0, 0, 0, 0,
 ]);
 const PNG_B64 = bytesToBase64(PNG_BYTES);
+// A 1x1 GIF89a.
+const GIF_B64 = "R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==";
 const SVG_B64 = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>').toString("base64");
 
 interface Call {
@@ -125,6 +127,13 @@ describe("createImage request", () => {
     expect(calls[0]!.body).toEqual({ model: "test/image-model", prompt: "a lighthouse", ...params });
   });
 
+  it("sends the GIF frame settings at the top level", async () => {
+    const { f, calls } = recorder(() => json(okBody()));
+    const params = { output_format: "gif", frame_count: 9, frame_duration_ms: 200 };
+    await createImage(cfg, req({ params }), f);
+    expect(calls[0]!.body).toEqual({ model: "test/image-model", prompt: "a lighthouse", ...params });
+  });
+
   it("sends HTTP-Referer when configured", async () => {
     const { f, calls } = recorder(() => json(okBody()));
     await createImage({ ...cfg, openrouterReferer: "https://app.example.test" }, req(), f);
@@ -159,15 +168,22 @@ describe("createImage response", () => {
     expect((await createImage(cfg, req(), f)).costUsd).toBeNull();
   });
 
+  it("accepts a GIF and sniffs it as image/gif", async () => {
+    const { f } = recorder(() => json({ data: [{ b64_json: GIF_B64, media_type: "image/gif" }], usage: { cost: 0.05 } }));
+    const out = await createImage(cfg, req(), f);
+    expect(out.info).toEqual({ mime: "image/gif", width: 1, height: 1 });
+    expect(out.costUsd).toBe(0.05);
+  });
+
   it("throws unsupported_output for an SVG media type", async () => {
     const { f } = recorder(() => json({ data: [{ b64_json: SVG_B64, media_type: "image/svg+xml" }] }));
     const e = await failure(createImage(cfg, req(), f));
     expect(e.code).toBe("unsupported_output");
     expect(e.message).toMatch(/SVG/);
-    expect(e.message).toMatch(/PNG, JPEG and WebP/);
+    expect(e.message).toMatch(/PNG, JPEG, WebP and GIF/);
   });
 
-  it("throws unsupported_output when the bytes are not PNG, JPEG or WebP", async () => {
+  it("throws unsupported_output when the bytes are not PNG, JPEG, WebP or GIF", async () => {
     const { f } = recorder(() => json({ data: [{ b64_json: SVG_B64, media_type: "image/png" }] }));
     expect((await failure(createImage(cfg, req(), f))).code).toBe("unsupported_output");
   });
@@ -627,7 +643,7 @@ describe("describeOpenRouterError", () => {
     expect(describeOpenRouterError(new OpenRouterError(200, "empty_response", "x"), null)).toMatch(/no image.*billed/i);
     const text = describeOpenRouterError(new OpenRouterError(200, "unsupported_output", "x"), null);
     expect(text).toMatch(/SVG/);
-    expect(text).toMatch(/PNG, JPEG and WebP/);
+    expect(text).toMatch(/PNG, JPEG, WebP and GIF/);
   });
 
   it("cuts a passed-through message to 500 characters", () => {

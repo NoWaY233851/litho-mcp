@@ -37,6 +37,9 @@ export function fakeDeps(overrides: Partial<Deps> = {}): Deps {
 export const PNG_B64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
+// A real 1x1 GIF89a, for the GIF output path (docs/design/0011-animated-gif-output.md).
+export const GIF_B64 = "R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==";
+
 const catalog = readFileSync(new URL("./fixtures/image-models.json", import.meta.url), "utf8");
 const pricing = readFileSync(new URL("./fixtures/models-pricing.json", import.meta.url), "utf8");
 

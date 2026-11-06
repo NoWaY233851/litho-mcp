@@ -11,6 +11,7 @@ import { createImage, getKeyInfo, type CreatedImage } from "../openrouter/client
 import { formatCost } from "../openrouter/cost.js";
 import { OpenRouterError, describeOpenRouterError, isLimitError, truncate } from "../openrouter/errors.js";
 import {
+  GIF_PARAMS,
   IMAGE_PARAMS,
   getImageModels,
   summarizeModel,
@@ -29,20 +30,26 @@ export const GenerateArgs = z.object({
   resolution: z.string().optional().describe('For example "1K" or "2K", if the model supports it.'),
   quality: z.string().optional().describe("If the model supports it."),
   background: z.string().optional().describe("If the model supports it."),
-  output_format: z.string().optional().describe("png, jpeg or webp, if the model supports it."),
+  output_format: z.string().optional().describe("png, jpeg or webp, or gif for an animated GIF, if the model supports it."),
   output_compression: z.number().int().min(0).max(100).optional().describe("0 to 100, if the model supports it."),
   seed: z.number().int().optional().describe("If the model supports it."),
+  frame_count: z.number().int().optional().describe("Animated GIF only: number of frames. Range in list_models; omit for the default."),
+  frame_duration_ms: z
+    .number()
+    .int()
+    .optional()
+    .describe("Animated GIF only: milliseconds per frame. Range in list_models; omit for the default."),
 });
 export type GenerateArgs = z.infer<typeof GenerateArgs>;
 
 export const GENERATE_DESCRIPTION =
-  "Generate a raster image, such as a photo, illustration, poster or card, from a text prompt using an OpenRouter image model. Use it when the user asks to draw, generate or create an image or picture. The image is shown to the user inline; you receive a small preview, its id and a link to the original. To change it, call edit_image with the id. Call list_models to see other models and which parameters each supports. Images are kept for a limited time (30 days by default).";
+  "Generate a raster image, such as a photo, illustration, poster or card, from a text prompt using an OpenRouter image model. Use it when the user asks to draw, generate or create an image or picture. The image is shown to the user inline; you receive a small preview, its id and a link to the original. To change it, call edit_image with the id. For an animated GIF, set output_format to gif where list_models offers it; a GIF can't be edited, so to change one, generate it again. Call list_models to see other models and which parameters each supports. Images are kept for a limited time (30 days by default).";
 
 export const LIST_MODELS_DESCRIPTION =
-  "List OpenRouter image models: whether each can edit images, how many reference images it accepts, which of the parameters aspect_ratio, resolution, quality, background, output_format, output_compression and seed it supports (with allowed values), and pricing. Optional query filters by id or name.";
+  "List OpenRouter image models: whether each can edit images, how many reference images it accepts, which of the parameters aspect_ratio, resolution, quality, background, output_format, output_compression and seed it supports (with allowed values), frame_count and frame_duration_ms for models that output animated GIFs, and pricing. Optional query filters by id or name.";
 
 export const EDIT_DESCRIPTION =
-  "Edit an image, or create a new one from reference images, using an OpenRouter image model. Pass image_ids from earlier results or uploads, and/or public http(s) image_urls. Each edit creates a new image with its own id; earlier versions stay available, so to go back, edit from the earlier id. The model may redraw parts you did not ask to change.";
+  "Edit an image, or create a new one from reference images, using an OpenRouter image model. Pass image_ids from earlier results or uploads, and/or public http(s) image_urls. Each edit creates a new image with its own id; earlier versions stay available, so to go back, edit from the earlier id. The model may redraw parts you did not ask to change. GIF images can't be used as references.";
 
 export const UPLOAD_IMAGE_DESCRIPTION =
   "Show an upload button so the user can pick a photo from their device. The result contains the id the photo will have (up_...); after the user says it is uploaded, use that id with edit_image. Photos the user attached directly to the chat cannot be passed to these tools, so use this instead. If the user says the picker does not work on their device, ask them to open this same conversation on a computer and upload there.";
@@ -142,7 +149,7 @@ async function resolveRequest(
   if (!model) return errorResult(unknownModelMessage(modelId));
 
   const params: ImageParams = {};
-  for (const name of IMAGE_PARAMS) {
+  for (const name of [...IMAGE_PARAMS, ...GIF_PARAMS]) {
     const value = args[name];
     if (value !== undefined) Object.assign(params, { [name]: value });
   }
@@ -280,7 +287,16 @@ async function loadReference(
       }
       throw e;
     }
-    return stored ? { ok: true, bytes: stored.bytes, info: stored.info } : { ok: false, message: notFoundMessage(ref.id) };
+    if (!stored) return { ok: false, message: notFoundMessage(ref.id) };
+    // Whether a model can take a GIF reference, or what it does with the animation, is not
+    // documented (docs/design/0011-animated-gif-output.md).
+    if (stored.info.mime === "image/gif") {
+      return {
+        ok: false,
+        message: `Image ${echo(ref.id)} is a GIF, which can't be used as a reference. To change it, call generate_image again with output_format gif.`,
+      };
+    }
+    return { ok: true, bytes: stored.bytes, info: stored.info };
   }
   try {
     return { ok: true, ...(await fetchPublic(ref.url, { budget })) };

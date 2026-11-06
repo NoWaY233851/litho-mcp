@@ -78,6 +78,22 @@ async function noisyPng(width: number, height: number): Promise<Uint8Array> {
 }
 
 describe("sharpThumbnailer", () => {
+  it("turns an animated GIF into a still of its first frame, not the stacked frames", async () => {
+    const [width, height, frames] = [40, 30, 3];
+    // Each frame its own color: the encoder merges identical frames.
+    const raw = Buffer.alloc(width * height * frames * 4);
+    for (let i = 0; i < raw.length; i += 4) {
+      const frame = Math.floor(i / 4 / (width * height));
+      raw.set([frame * 120, 80, 255 - frame * 120, 255], i);
+    }
+    const gif = await sharp(raw, { raw: { width, height: height * frames, channels: 4, pageHeight: height } })
+      .gif({ delay: [100, 100, 100], loop: 0 })
+      .toBuffer();
+    expect((await sharp(gif).metadata()).pages).toBe(frames);
+    const info = sniffImage(await sharpThumbnailer.toWebp(new Uint8Array(gif), 1024));
+    expect(info).toEqual({ mime: "image/webp", width, height });
+  });
+
   it("shrinks a 1536x1024 PNG to a WebP with a 1024 px long edge", async () => {
     const out = await sharpThumbnailer.toWebp(await noisyPng(1536, 1024), 1024);
     const info = sniffImage(out);

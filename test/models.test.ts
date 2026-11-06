@@ -234,16 +234,51 @@ describe("validateRequest and summarizeModel", () => {
     expect(validateRequest(flare, { output_format: "svg" }, 0, "generate")).toMatch(/SVG.*not supported/);
   });
 
-  it("rejects a declared output_format the server cannot store, before any paid call", () => {
-    // The 2.6 series declares gif, but only PNG, JPEG and WebP are stored.
-    expect(flare26.params.output_format).toMatchObject({ values: expect.arrayContaining(["gif"]) });
-    const message = validateRequest(flare26, { output_format: "gif" }, 0, "generate");
-    expect(message).toMatch(/GIF output is not supported/);
-    expect(message).toContain("openai/gpt-image-2.6-flare");
-    expect(validateRequest(flare26, { output_format: "GIF" }, 0, "edit")).toMatch(/GIF output is not supported/);
+  it("accepts gif where the model declares it, and rejects formats the store can't keep", () => {
+    expect(validateRequest(flare26, { output_format: "gif" }, 0, "generate")).toBeNull();
     for (const format of ["png", "jpeg", "webp"]) {
       expect(validateRequest(flare26, { output_format: format }, 0, "generate")).toBeNull();
     }
+    const message = validateRequest(flare26, { output_format: "bmp" }, 0, "generate");
+    expect(message).toMatch(/BMP output is not supported/);
+    expect(message).toContain("openai/gpt-image-2.6-flare");
+    // 2.5 Flare declares no output_format at all.
+    expect(validateRequest(flare, { output_format: "gif" }, 0, "generate")).toMatch(/does not support "output_format"/);
+  });
+
+  it("frame_count and frame_duration_ms apply only to gif output", () => {
+    expect(validateRequest(flare26, { frame_count: 9 }, 0, "generate")).toMatch(/frame_count applies only to output_format gif/);
+    expect(validateRequest(flare26, { output_format: "png", frame_duration_ms: 200 }, 0, "generate")).toMatch(
+      /frame_duration_ms applies only to output_format gif/,
+    );
+    expect(validateRequest(flare26, { output_format: "gif", frame_count: 9, frame_duration_ms: 200 }, 0, "generate")).toBeNull();
+  });
+
+  it("checks frame ranges against OpenAI's documented limits unless the catalog declares its own", () => {
+    const gif = (p: { frame_count?: number; frame_duration_ms?: number }) =>
+      validateRequest(flare26, { output_format: "gif", ...p }, 0, "generate");
+    expect(gif({ frame_count: 2 })).toBeNull();
+    expect(gif({ frame_count: 16 })).toBeNull();
+    expect(gif({ frame_count: 1 })).toMatch(/frame_count to be a number in 2–16/);
+    expect(gif({ frame_count: 17 })).toMatch(/2–16/);
+    expect(gif({ frame_duration_ms: 20 })).toBeNull();
+    expect(gif({ frame_duration_ms: 2000 })).toBeNull();
+    expect(gif({ frame_duration_ms: 19 })).toMatch(/frame_duration_ms to be a number in 20–2000/);
+    expect(gif({ frame_duration_ms: 2001 })).toMatch(/20–2000/);
+
+    const declared: ImageModel = { ...flare26, params: { ...flare26.params, frame_count: { type: "range", min: 2, max: 64 } } };
+    expect(validateRequest(declared, { output_format: "gif", frame_count: 40 }, 0, "generate")).toBeNull();
+  });
+
+  it("rejects output_compression with gif output", () => {
+    expect(validateRequest(flare26, { output_format: "gif", output_compression: 50 }, 0, "generate")).toMatch(
+      /output_compression is not supported with output_format gif/,
+    );
+    expect(validateRequest(flare26, { output_format: "webp", output_compression: 50 }, 0, "generate")).toBeNull();
+  });
+
+  it("cuts a long rejected output_format in the message", () => {
+    expect(validateRequest(flare, { output_format: "x".repeat(100_000) }, 0, "generate")!.length).toBeLessThan(200);
   });
 
   it("includes the model id in messages", () => {
@@ -264,6 +299,15 @@ describe("validateRequest and summarizeModel", () => {
     for (const key of Object.keys(summary.params)) {
       expect(IMAGE_PARAMS as readonly string[]).toContain(key);
     }
+  });
+
+  it("summarizeModel lists the frame settings only for models that output gif", () => {
+    expect(summarizeModel(flare26).params).toMatchObject({
+      frame_count: { type: "range", min: 2, max: 16 },
+      frame_duration_ms: { type: "range", min: 20, max: 2000 },
+    });
+    expect(summarizeModel(flare).params).not.toHaveProperty("frame_count");
+    expect(summarizeModel(vector).params).not.toHaveProperty("frame_count");
   });
 
   it("summarizeModel derives edit support from modalities and input_references", () => {

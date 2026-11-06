@@ -9,8 +9,8 @@
 
 import type { Config } from "../config.js";
 import { base64ToBytes } from "../images/base64.js";
-import { sniffImage, type ImageInfo } from "../images/sniff.js";
-import { IMAGE_PARAMS, type ImageParams } from "./models.js";
+import { sniffStoredImage, type ImageInfo } from "../images/sniff.js";
+import { GIF_PARAMS, IMAGE_PARAMS, type ImageParams } from "./models.js";
 import {
   MAX_PASSTHROUGH,
   OpenRouterError,
@@ -123,7 +123,7 @@ export async function createImage(
   timeoutMs = GENERATE_TIMEOUT_MS,
 ): Promise<CreatedImage> {
   const body: Obj = { model: req.model, prompt: req.prompt };
-  for (const name of IMAGE_PARAMS) {
+  for (const name of [...IMAGE_PARAMS, ...GIF_PARAMS]) {
     if (req.params[name] !== undefined) body[name] = req.params[name];
   }
   if (req.references.length > 0) {
@@ -168,7 +168,7 @@ export async function createImage(
   }
   // The magic bytes decide, not media_type: a mislabelled or unknown format is rejected here
   // before anything is stored.
-  const info = sniffImage(bytes);
+  const info = sniffStoredImage(bytes);
   if (!info) throw unsupported();
 
   return { bytes, info, costUsd };

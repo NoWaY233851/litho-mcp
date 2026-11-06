@@ -1,6 +1,7 @@
 // Format detection from magic bytes. The server never trusts a Content-Type or a file
-// extension, so this is the boundary that decides what counts as an image: anything that is
-// not a PNG, JPEG or WebP header yields null. Only the header is inspected, never the pixel
+// extension, so this is the boundary that decides what counts as an image. Inputs (uploads and
+// reference URLs) must be PNG, JPEG or WebP; generated images may also be GIF
+// (docs/design/0011-animated-gif-output.md). Only the header is inspected, never the pixel
 // data, and only dimensions are reported: size limits are enforced by the callers.
 //
 // Offsets come from the format specifications:
@@ -8,8 +9,9 @@
 //   JPEG  ITU-T T.81, https://www.w3.org/Graphics/JPEG/itu-t81.pdf (B.1.1.2 markers, B.2.2 frame header)
 //   WebP  RFC 9649, https://www.rfc-editor.org/rfc/rfc9649 (2.4 file header, 2.5 VP8, 2.6 and 3.4 VP8L, 2.7 VP8X)
 //         and the VP8 key frame header in RFC 6386 section 9.1 (https://www.rfc-editor.org/rfc/rfc6386)
+//   GIF   https://www.w3.org/Graphics/GIF/spec-gif89a.txt (17 header, 18 logical screen descriptor)
 
-export type ImageMime = "image/png" | "image/jpeg" | "image/webp";
+export type ImageMime = "image/png" | "image/jpeg" | "image/webp" | "image/gif";
 
 export interface ImageInfo {
   mime: ImageMime;
@@ -17,9 +19,17 @@ export interface ImageInfo {
   height: number;
 }
 
-/** Never throws and never reads outside `bytes`: every read is preceded by a length check. */
+/**
+ * PNG, JPEG or WebP: the formats accepted as input. Never throws and never reads outside
+ * `bytes`: every read is preceded by a length check.
+ */
 export function sniffImage(bytes: Uint8Array): ImageInfo | null {
   return sniffPng(bytes) ?? sniffJpeg(bytes) ?? sniffWebp(bytes);
+}
+
+/** Every format the store keeps for a generated image: the input formats plus GIF. */
+export function sniffStoredImage(bytes: Uint8Array): ImageInfo | null {
+  return sniffImage(bytes) ?? sniffGif(bytes);
 }
 
 const be16 = (b: Uint8Array, i: number): number => (b[i]! << 8) | b[i + 1]!;
@@ -134,4 +144,17 @@ function sniffWebp(b: Uint8Array): ImageInfo | null {
   }
 
   return null;
+}
+
+// --- GIF -------------------------------------------------------------------------------
+
+const GIF87A = ascii("GIF87a");
+const GIF89A = ascii("GIF89a");
+
+// The logical screen size follows the 6-byte header. For an animation it is the canvas every
+// frame is drawn on.
+function sniffGif(b: Uint8Array): ImageInfo | null {
+  if (!matches(b, 0, GIF87A) && !matches(b, 0, GIF89A)) return null;
+  if (b.length < 10) return null;
+  return found("image/gif", le16(b, 6), le16(b, 8));
 }
