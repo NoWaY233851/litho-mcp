@@ -3,7 +3,14 @@ import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { bytesToBase64 } from "../src/images/base64.js";
 import { sniffImage } from "../src/images/sniff.js";
-import { makeThumbnail, sharpThumbnailer, THUMBNAIL_BASE64_BUDGET, type Thumbnailer } from "../src/images/thumbnail.js";
+import {
+  SHEET_GAP,
+  SHEET_MAX_FRAMES,
+  THUMBNAIL_BASE64_BUDGET,
+  makeThumbnail,
+  sharpThumbnailer,
+  type Thumbnailer,
+} from "../src/images/thumbnail.js";
 
 // base64 length of n bytes is 4 * ceil(n / 3), so 225_000 bytes is exactly 300_000 characters.
 const BUDGET_BYTES = 225_000;
@@ -13,6 +20,7 @@ function scripted(sizes: (number | Error)[]): Thumbnailer & { edges: number[] } 
   const edges: number[] = [];
   return {
     edges,
+    animation: async () => ({ frames: 1, delaysMs: [], loop: 0 }),
     async toWebp(_bytes, edge) {
       edges.push(edge);
       const next = sizes[edges.length - 1]!;
@@ -78,22 +86,6 @@ async function noisyPng(width: number, height: number): Promise<Uint8Array> {
 }
 
 describe("sharpThumbnailer", () => {
-  it("turns an animated GIF into a still of its first frame, not the stacked frames", async () => {
-    const [width, height, frames] = [40, 30, 3];
-    // Each frame its own color: the encoder merges identical frames.
-    const raw = Buffer.alloc(width * height * frames * 4);
-    for (let i = 0; i < raw.length; i += 4) {
-      const frame = Math.floor(i / 4 / (width * height));
-      raw.set([frame * 120, 80, 255 - frame * 120, 255], i);
-    }
-    const gif = await sharp(raw, { raw: { width, height: height * frames, channels: 4, pageHeight: height } })
-      .gif({ delay: [100, 100, 100], loop: 0 })
-      .toBuffer();
-    expect((await sharp(gif).metadata()).pages).toBe(frames);
-    const info = sniffImage(await sharpThumbnailer.toWebp(new Uint8Array(gif), 1024));
-    expect(info).toEqual({ mime: "image/webp", width, height });
-  });
-
   it("shrinks a 1536x1024 PNG to a WebP with a 1024 px long edge", async () => {
     const out = await sharpThumbnailer.toWebp(await noisyPng(1536, 1024), 1024);
     const info = sniffImage(out);
@@ -148,5 +140,149 @@ describe("sharpThumbnailer", () => {
   it("rejects bytes that are not an image", async () => {
     await expect(sharpThumbnailer.toWebp(INPUT, 1024)).rejects.toThrow();
     expect(await makeThumbnail(sharpThumbnailer, INPUT)).toBeNull();
+  });
+});
+
+// Frame k is one flat color, distinct per frame: the encoder merges identical frames.
+const frameColor = (k: number): [number, number, number] => [(k * 20) % 256, 255 - k * 20, (k * 50) % 256];
+
+async function animatedGif(
+  width: number,
+  height: number,
+  frames: number,
+  options: { delay?: number[]; loop?: number } = {},
+): Promise<Uint8Array> {
+  const raw = Buffer.alloc(width * height * frames * 4);
+  for (let i = 0; i < raw.length; i += 4) raw.set([...frameColor(Math.floor(i / 4 / (width * height))), 255], i);
+  const gif = await sharp(raw, { raw: { width, height: height * frames, channels: 4, pageHeight: height } })
+    .gif({ delay: options.delay ?? new Array(frames).fill(100), loop: options.loop ?? 0 })
+    .toBuffer();
+  return new Uint8Array(gif);
+}
+
+/** The color at the center of grid cell (col, row) of a contact sheet. */
+async function cellColor(sheet: Uint8Array, cellW: number, cellH: number, col: number, row: number): Promise<number[]> {
+  const { data, info } = await sharp(sheet).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const x = col * (cellW + SHEET_GAP) + Math.floor(cellW / 2);
+  const y = row * (cellH + SHEET_GAP) + Math.floor(cellH / 2);
+  const i = (y * info.width + x) * info.channels;
+  return [data[i]!, data[i + 1]!, data[i + 2]!];
+}
+
+/** Mean distance of each pixel from the average of its left and right neighbours: about 0 for a smooth ramp. */
+async function roughness(image: Buffer): Promise<number> {
+  const { data, info } = await sharp(image).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const { width, height, channels } = info;
+  let sum = 0;
+  let count = 0;
+  // A 2 px border is skipped, where the cell meets the gap or the image edge.
+  for (let y = 2; y < height - 2; y++) {
+    for (let x = 3; x < width - 3; x++) {
+      for (let c = 0; c < channels; c++) {
+        const i = (y * width + x) * channels + c;
+        sum += Math.abs(2 * data[i]! - data[i - channels]! - data[i + channels]!) / 2;
+        count++;
+      }
+    }
+  }
+  return sum / count;
+}
+
+const near = (actual: number[], expected: number[]): boolean => actual.every((v, i) => Math.abs(v - expected[i]!) <= 8);
+
+describe("sharpThumbnailer: animated GIF", () => {
+  it("makes a contact sheet of the frames in reading order, with gaps between cells", async () => {
+    const sheet = await sharpThumbnailer.toWebp(await animatedGif(40, 30, 3), 1024);
+    // 3 frames: 2 columns, 2 rows, never upscaled.
+    expect(sniffImage(sheet)).toEqual({ mime: "image/webp", width: 2 * 40 + SHEET_GAP, height: 2 * 30 + SHEET_GAP });
+    expect(near(await cellColor(sheet, 40, 30, 0, 0), frameColor(0))).toBe(true);
+    expect(near(await cellColor(sheet, 40, 30, 1, 0), frameColor(1))).toBe(true);
+    expect(near(await cellColor(sheet, 40, 30, 0, 1), frameColor(2))).toBe(true);
+  });
+
+  it(`samples at most ${SHEET_MAX_FRAMES} frames evenly, keeping the first and the last`, async () => {
+    const sheet = await sharpThumbnailer.toWebp(await animatedGif(20, 20, 12), 1024);
+    expect(sniffImage(sheet)).toMatchObject({ width: 3 * 20 + 2 * SHEET_GAP, height: 3 * 20 + 2 * SHEET_GAP });
+    // Frames 0, 1, 3, 4, 6, 7, 8, 10, 11 of 0..11, in reading order.
+    const sampled = [0, 1, 3, 4, 6, 7, 8, 10, 11];
+    for (const [k, frame] of sampled.entries()) {
+      expect(near(await cellColor(sheet, 20, 20, k % 3, Math.floor(k / 3)), frameColor(frame)), `cell ${k}`).toBe(true);
+    }
+  });
+
+  it("fits the sheet within the edge and keeps the frame's aspect ratio", async () => {
+    const sheet = await sharpThumbnailer.toWebp(await animatedGif(300, 200, 9), 256);
+    const info = sniffImage(sheet)!;
+    expect(info.width).toBeLessThanOrEqual(256);
+    expect(info.height).toBeLessThanOrEqual(256);
+    expect(info.width).toBeGreaterThan(250);
+    const cellW = (info.width - 2 * SHEET_GAP) / 3;
+    const cellH = (info.height - 2 * SHEET_GAP) / 3;
+    expect(cellW / cellH).toBeCloseTo(1.5, 1);
+  });
+
+  it("puts two frames side by side", async () => {
+    const sheet = await sharpThumbnailer.toWebp(await animatedGif(30, 20, 2), 1024);
+    expect(sniffImage(sheet)).toMatchObject({ width: 2 * 30 + SHEET_GAP, height: 20 });
+    expect(near(await cellColor(sheet, 30, 20, 0, 0), frameColor(0))).toBe(true);
+    expect(near(await cellColor(sheet, 30, 20, 1, 0), frameColor(1))).toBe(true);
+  });
+
+  it("fits very wide frames within the edge", async () => {
+    const sheet = await sharpThumbnailer.toWebp(await animatedGif(400, 20, 4), 256);
+    const info = sniffImage(sheet)!;
+    expect(info.width).toBeLessThanOrEqual(256);
+    expect(info.height).toBeLessThanOrEqual(256);
+    expect(info.height).toBeGreaterThan(0);
+  });
+
+  it("keeps a frame's colors: tiles are not re-quantized to a GIF palette", async () => {
+    // Downscaling a two-axis gradient makes far more than 256 colors, which a GIF tile would dither.
+    const [width, height, frames] = [256, 256, 2];
+    const raw = Buffer.alloc(width * height * frames * 4);
+    // The second frame differs, or the encoder would merge the two.
+    for (let i = 0; i < raw.length; i += 4) {
+      const frame = Math.floor(i / 4 / (width * height));
+      const p = (i / 4) % (width * height);
+      const [x, y] = [p % width, Math.floor(p / width)];
+      raw.set([x, y, frame === 0 ? (x + y) >> 1 : 255 - ((x + y) >> 1), 255], i);
+    }
+    const gif = new Uint8Array(
+      await sharp(raw, { raw: { width, height: height * frames, channels: 4, pageHeight: height } }).gif().toBuffer(),
+    );
+    expect((await sharp(gif).metadata()).pages).toBe(2);
+    const sheet = await sharpThumbnailer.toWebp(gif, 256);
+    const cell = Math.floor((256 - SHEET_GAP) / 2);
+    // A palette re-quantization dithers a smooth gradient, so the tile is rougher than a plain
+    // resize of the same frame (measured: about 1.65 times as rough; raw tiles stay at about 1).
+    const direct = await sharp(gif, { page: 0, pages: 1 }).resize(cell, cell, { fit: "fill" }).png().toBuffer();
+    const tile = await sharp(sheet).extract({ left: 0, top: 0, width: cell, height: cell }).png().toBuffer();
+    expect(await roughness(tile)).toBeLessThan(1.25 * (await roughness(direct)));
+  });
+
+  it("previews an animated image in another format as its first frame only", async () => {
+    const [width, height] = [40, 30];
+    const raw = Buffer.alloc(width * height * 2 * 4);
+    for (let i = 0; i < raw.length; i += 4) raw.set([...frameColor(Math.floor(i / 4 / (width * height))), 255], i);
+    const webp = new Uint8Array(
+      await sharp(raw, { raw: { width, height: height * 2, channels: 4, pageHeight: height } }).webp({ loop: 0 }).toBuffer(),
+    );
+    expect((await sharp(webp).metadata()).pages).toBe(2);
+    expect(sniffImage(await sharpThumbnailer.toWebp(webp, 1024))).toMatchObject({ width, height });
+  });
+
+  it("reads the frame count, the per-frame delays and the loop count", async () => {
+    expect(await sharpThumbnailer.animation(await animatedGif(10, 10, 3, { delay: [100, 120, 140], loop: 2 }))).toEqual({
+      frames: 3,
+      delaysMs: [100, 120, 140],
+      loop: 2,
+    });
+    expect(await sharpThumbnailer.animation(await animatedGif(10, 10, 2))).toMatchObject({ frames: 2, loop: 0 });
+  });
+
+  it("reports a single frame for a still GIF and for other formats", async () => {
+    const stillGif = new Uint8Array(Buffer.from("R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==", "base64"));
+    expect(await sharpThumbnailer.animation(stillGif)).toMatchObject({ frames: 1 });
+    expect(await sharpThumbnailer.animation(await noisyPng(30, 20))).toMatchObject({ frames: 1 });
   });
 });

@@ -106,6 +106,7 @@ describe("generateImage", () => {
           toWebp: async () => {
             throw new Error("decoder exploded with prompt text");
           },
+          animation: async () => ({ frames: 1, delaysMs: [], loop: 0 }),
         },
       },
     );
@@ -238,7 +239,7 @@ describe("generateImage", () => {
 describe("generateImage: animated GIF", () => {
   const FLARE_26 = "openai/gpt-image-2.6-flare";
 
-  it("sends the frame settings, stores the GIF and tells Claude the preview is the first frame", async () => {
+  it("sends the frame settings and stores the GIF", async () => {
     const { or, deps } = setup({ images: () => Response.json({ data: [{ b64_json: GIF_B64, media_type: "image/gif" }], usage: { cost: 0.06 } }) });
     const r = await generateImage(deps, {
       prompt: "a waving cat",
@@ -252,8 +253,80 @@ describe("generateImage: animated GIF", () => {
     expect(or.posts()[0]!.body).toMatchObject({ model: FLARE_26, output_format: "gif", frame_count: 9, frame_duration_ms: 200 });
     const sc = r.structuredContent as Record<string, unknown>;
     expect(sc).toMatchObject({ kind: "image", mime: "image/gif", width: 1, height: 1, cost_usd: 0.06 });
-    expect(texts(r)).toContain("format: GIF; the preview shows only the first frame");
     expect((await deps.store.get(sc.id as string))?.info.mime).toBe("image/gif");
+  });
+
+  const gifResult = () => Response.json({ data: [{ b64_json: GIF_B64, media_type: "image/gif" }], usage: { cost: 0.06 } });
+  const withAnimation = (animation: () => Promise<{ frames: number; delaysMs: number[]; loop: number }>) =>
+    setup({ images: gifResult }, { thumbnailer: { toWebp: async () => new Uint8Array([0x52, 0x49, 0x46, 0x46]), animation } });
+  const gif = (deps: Parameters<typeof generateImage>[0]) =>
+    generateImage(deps, { prompt: "a waving cat", model: FLARE_26, output_format: "gif" });
+
+  it("describes an animation and its contact-sheet preview", async () => {
+    const { deps } = withAnimation(async () => ({ frames: 9, delaysMs: new Array(9).fill(200), loop: 0 }));
+    const lines = texts(await gif(deps));
+    expect(lines).toContain("format: animated GIF, 9 frames, 200 ms each (1.8 s), loops forever");
+    expect(lines).toContain("preview: all 9 frames in a grid, in order left to right, then top to bottom");
+  });
+
+  it("says when the preview shows only some of the frames, and sums uneven delays", async () => {
+    const { deps } = withAnimation(async () => ({ frames: 16, delaysMs: [...new Array(15).fill(100), 500], loop: 3 }));
+    const lines = texts(await gif(deps));
+    expect(lines).toContain("format: animated GIF, 16 frames, 2 s in total, loop count 3");
+    expect(lines).toContain("preview: 9 of the 16 frames, evenly spaced, in a grid, in order left to right, then top to bottom");
+  });
+
+  it("says a single-frame GIF is not animated", async () => {
+    const { deps } = withAnimation(async () => ({ frames: 1, delaysMs: [], loop: 0 }));
+    const lines = texts(await gif(deps));
+    expect(lines).toContain("format: GIF, a single frame (not animated)");
+    expect(lines.some((t) => t.startsWith("preview:"))).toBe(false);
+  });
+
+  it("falls back to a bare format line when the animation can't be read, and logs a fixed line", async () => {
+    const { deps, logs } = withAnimation(async () => {
+      throw new Error("decoder exploded with prompt text");
+    });
+    const r = await gif(deps);
+    expect(r.isError).toBeFalsy();
+    expect(texts(r)).toContain("format: GIF");
+    expect(texts(r).some((t) => t.startsWith("preview:"))).toBe(false);
+    expect(logs).toEqual(["animation info unavailable"]);
+  });
+
+  it("omits the preview line when no thumbnail could be made", async () => {
+    const { deps } = setup(
+      { images: gifResult },
+      {
+        thumbnailer: {
+          toWebp: async () => {
+            throw new Error("no preview");
+          },
+          animation: async () => ({ frames: 9, delaysMs: new Array(9).fill(200), loop: 0 }),
+        },
+      },
+    );
+    const lines = texts(await gif(deps));
+    expect(lines).toContain("format: animated GIF, 9 frames, 200 ms each (1.8 s), loops forever");
+    expect(lines.some((t) => t.startsWith("preview:"))).toBe(false);
+  });
+
+  it("reads animation info only for GIFs", async () => {
+    let calls = 0;
+    const { deps } = setup(
+      {},
+      {
+        thumbnailer: {
+          toWebp: async () => new Uint8Array([0x52, 0x49, 0x46, 0x46]),
+          animation: async () => {
+            calls++;
+            return { frames: 1, delaysMs: [], loop: 0 };
+          },
+        },
+      },
+    );
+    await generateImage(deps, { prompt: "a cat" });
+    expect(calls).toBe(0);
   });
 
   it("rejects frame settings without output_format gif before any paid call", async () => {

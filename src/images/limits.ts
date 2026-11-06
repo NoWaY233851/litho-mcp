@@ -38,5 +38,11 @@ export function readBudget(limit: number): ReadBudget {
   };
 }
 
+/**
+ * Most frames of an animated GIF shown in Claude's contact-sheet preview. The thumbnailer draws
+ * them and the result text describes them (docs/design/0011-animated-gif-output.md).
+ */
+export const SHEET_MAX_FRAMES = 9;
+
 /** The message of the error ImageStore.get throws when a read does not fit its ReadBudget. */
 export const READ_BUDGET_EXCEEDED_MESSAGE = "reference read budget exceeded";
