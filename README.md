@@ -145,6 +145,8 @@ If claude.ai reports a "Connection issue" saying the server asked for sign-in (s
 
 claude.ai has its own ways to make visuals, and it may use them for a request such as "draw a recipe card". The first time in a conversation, name the connector, for example "use litho-mcp to generate a recipe card", or ask explicitly for an image, for example "generate an image of a recipe card". Once litho-mcp has been used in a conversation, Claude keeps using it there.
 
+For an animated GIF, ask for one with a model that offers it, such as GPT Image 2.6, the built-in default. A GIF can't be edited; ask for a new one instead.
+
 ## Rotate the secret
 
 1. Generate a new value and save it in a password manager:
