@@ -1,6 +1,6 @@
 # 0005. Show images inline with an MCP Apps widget
 
-- Status: Accepted. Validated on claude.ai web and iOS on 2026-10-16, and on web, desktop and iOS with Blob-hosted images on 2026-10-17 and in acceptance on 2026-10-18 and 2026-10-19; Android is untested. Revised on 2026-10-17 for Blob-hosted images and host theming.
+- Status: Accepted. Validated on claude.ai web and iOS on 2026-10-16, and on web, desktop and iOS with Blob-hosted images on 2026-10-17 and in acceptance on 2026-10-18 and 2026-10-19; Android is untested. Revised on 2026-10-17 for Blob-hosted images and host theming. Copying and saving re-checked on 2026-11-05: only the web works.
 - Date: 2026-10-16
 
 ## Context
@@ -113,10 +113,20 @@ Tested on the production deployment from claude.ai web (macOS, Chrome), Claude d
 - **Tool routing:** in new chats that did not name the tool, "draw a recipe card" made Claude use claude.ai's own design tools, once by drawing the card itself and once with Claude Design. "Generate an image of a recipe card" called `generate_image`. The tool description now opens with when to use it, and the README tells users to name the connector or ask for an image.
 - **Android:** not tested (no device).
 
+## Validation (2026-11-05, copying and saving)
+
+In the current Claude apps, on the production deployment:
+
+- **Desktop:** the context menu no longer lists Copy Image. Only Copy Image Address works.
+- **iOS:** long-press no longer offers copy or save, although it did with the production widget before. Dragging the image into the composer inserts only its URL.
+- **Web:** unaffected.
+
+The widget's image handling didn't change, so the cause is in the apps. A clipboard copy button wasn't built: it needs the host to grant `clipboard-write` to the iframe, which Claude doesn't document, and it would add a button to the image-only layout.
+
 ## Consequences
 
 - Images are visible inline without expanding anything. Phones are the most constrained target.
-- Saving or downloading relies on long-press on phones, right-click on web, or asking Claude for the link, because there's no download button. Desktop has no direct save at all; the link is the way.
+- There's no download button. On web, right-click saves the image. In the desktop and iOS apps, use its link: Copy Image Address on desktop, or ask Claude for it.
 - The bundled widget adds a build step: `npm run build:ui` runs before tests and deploys.
 - Blob URLs load inside the iframe, so no base64 fallback tool is needed. If a platform stops allowing them, a widget-only `get_image_data` tool returning base64 is the fallback.
 

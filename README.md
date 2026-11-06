@@ -207,7 +207,7 @@ Host-specific code stays behind small adapters so the core can move hosts. Only 
 
 ## Platform limitations
 
-- The Claude desktop app has no direct "save image", and Copy Image does not work. Copy the image address from the result and open it in a browser.
+- The Claude desktop and iOS apps can't copy or save images from the widget. Copy the image address, or ask Claude for the link, and open it in a browser. claude.ai on the web is not affected.
 - The desktop app cannot decode DNG photos, and probably not HEIC. Export them as JPEG first. iOS converts both.
 - After replacing an uploaded photo, wait about a minute before asking for an edit, or the previous photo may still be used. The widget shows the same note ("Claude can use the new photo in about a minute.") after a replacement.
 - Android is untested.
