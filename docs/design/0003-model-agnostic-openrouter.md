@@ -1,6 +1,6 @@
 # 0003. Model-agnostic via the OpenRouter Image API
 
-- Status: Accepted. Revised on 2026-10-18 and 2026-10-20 for billing-accurate error messages. Costs observed in acceptance on 2026-10-18 and 2026-10-19.
+- Status: Accepted. Revised on 2026-10-18 and 2026-10-20 for billing-accurate error messages, and on 2026-11-05 for output formats. Costs observed in acceptance on 2026-10-18 and 2026-10-19.
 - Date: 2026-10-16
 
 ## Context
@@ -66,7 +66,7 @@ Remaining spend is available from `GET /api/v1/key`.
 - Unknown models point Claude to `list_models`.
 - Generating with an edit-only model points it to `edit_image`.
 - Editing with a text-only model, or with too many references, is rejected.
-- `output_format: "svg"` is always rejected. If a model returns something that isn't PNG, JPEG or WebP anyway, the call fails cleanly and nothing is stored.
+- An `output_format` other than png, jpeg or webp (such as svg or gif) is always rejected, even when the model declares it. If a model returns something that isn't PNG, JPEG or WebP anyway, the call fails cleanly and nothing is stored.
 
 **Tools and errors**
 - `list_models` shows, per model:
@@ -125,3 +125,7 @@ Costs observed with the default model on the production deployment.
 
 - Generations cost $0.005 to $0.019 and edits $0.015 to $0.071. The highest was a text replacement on a larger image.
 - A 2:3 recipe card cost $0.043.
+
+## Revision (2026-11-05)
+
+- OpenRouter's GPT Image 2.6 models are the first to declare `gif` as an `output_format` (catalog read on 2026-11-05). Only PNG, JPEG and WebP are stored, so a GIF result would be billed and then discarded. Local validation therefore accepts only png, jpeg and webp as `output_format` (any letter case) and rejects any other value before OpenRouter is called, whatever the model declares. This replaces the earlier svg-only rule.

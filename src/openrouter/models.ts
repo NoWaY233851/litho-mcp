@@ -55,6 +55,8 @@ const PRICING_QUERY = "?output_modalities=image";
 const FETCH_TIMEOUT_MS = 15_000;
 const CACHE_TTL_MS = 3_600_000;
 const PRICE_KEYS = ["image", "image_output", "prompt"] as const;
+// Output formats the image store accepts (src/images/sniff.ts).
+const STORABLE_FORMATS: readonly string[] = ["png", "jpeg", "webp"];
 
 // Module-level so a reused Fluid instance shares one catalog; a cold instance simply refetches.
 // Only successful results are stored, so a transient failure is retried by the next call.
@@ -214,9 +216,12 @@ export function validateRequest(
   refCount: number,
   mode: "generate" | "edit",
 ): string | null {
-  // SVG is rejected before anything else: the server only stores sniffed PNG, JPEG and WebP.
-  if (typeof params.output_format === "string" && params.output_format.toLowerCase() === "svg") {
-    return `Model "${model.id}": SVG output is not supported. Use output_format png, jpeg or webp where the model offers it.`;
+  // A format the server can't store is rejected before anything else, even when the model
+  // declares it (the GPT Image 2.6 series offers gif): only sniffed PNG, JPEG and WebP are stored,
+  // so the paid result would be discarded.
+  const format = params.output_format;
+  if (typeof format === "string" && !STORABLE_FORMATS.includes(format.toLowerCase())) {
+    return `Model "${model.id}": ${format.toUpperCase()} output is not supported. Use output_format png, jpeg or webp where the model offers it.`;
   }
 
   const limits = referenceLimits(model);
