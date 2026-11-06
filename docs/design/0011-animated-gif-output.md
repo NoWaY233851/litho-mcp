@@ -32,3 +32,9 @@
 - For a GIF, the result now tells Claude what the animation is: the frame count, the timing and the loop count. A single-frame GIF is reported as not animated.
 - An animated GIF's preview is a contact sheet instead of the first frame: up to 9 frames, evenly spaced with the first and last included, in a grid read left to right, then top to bottom. Other formats keep the plain preview.
 - Building the sheet decodes up to 9 frames, one at a time, which adds a fraction of a second to a GIF result.
+
+## Validation (2026-11-06, after the revision)
+
+- A 1:1 GIF of 12 frames at 150 ms each was generated with `openai/gpt-image-2.6-flare`. OpenRouter therefore passes `frame_count` and `frame_duration_ms` through; the model's default is 9 frames.
+- It cost $0.131, about seven times the highest still generation seen in acceptance ($0.019, [0003](0003-model-agnostic-openrouter.md)). This is one sample: how the cost varies with the frame count or the size is not known.
+- Claude reported the frame count, the timing and the loop from the result, and described the motion from the contact sheet.
