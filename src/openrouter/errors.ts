@@ -78,7 +78,7 @@ export function truncate(text: string, max = MAX_PASSTHROUGH): string {
 }
 
 export const UNSUPPORTED_OUTPUT_MESSAGE =
-  "The model returned an image format that can't be used (for example SVG). Only PNG, JPEG and WebP are supported.";
+  "The model returned an image format that can't be used (for example SVG). Only PNG, JPEG, WebP and GIF are supported.";
 
 const LIMIT_SOURCES = new Set(["openrouter_credits", "openrouter_key_limit", "openrouter_in_flight_budget"]);
 

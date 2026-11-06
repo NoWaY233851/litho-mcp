@@ -74,6 +74,7 @@ There is no database and no OAuth state. Everything except `ImageStore`, `Thumbn
 | [0008](0008-vercel-hobby.md) | Host on Vercel Hobby as one Node function | Accepted; validated 2026-10-17 and in acceptance 2026-10-18/19 |
 | [0009](0009-connector-secret-header.md) | Authenticate with a connector secret in a request header | Accepted; validated 2026-10-17 and in acceptance 2026-10-18/19 |
 | [0010](0010-vercel-blob-storage.md) | Store images in a public Vercel Blob store; delete after 30 days | Accepted; validated 2026-10-17, with OIDC 2026-10-19, and in acceptance 2026-10-18/19 |
+| [0011](0011-animated-gif-output.md) | Animated GIF output | Accepted; not yet validated |
 
 To change a decision, add a new ADR that supersedes the old one, and update the old ADR's status. Don't rewrite history.
 

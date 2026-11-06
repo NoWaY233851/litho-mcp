@@ -27,6 +27,10 @@ const PNG_BYTES = Uint8Array.from(
   ),
 );
 
+// A 1x1 GIF89a. Generated images may be GIF; uploads may not (docs/design/0011-animated-gif-output.md).
+const GIF_BYTES = Uint8Array.from(Buffer.from("R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==", "base64"));
+const GIF: ImageInfo = { mime: "image/gif", width: 1, height: 1 };
+
 const SVG_BYTES = new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"><script>x</script></svg>');
 
 type PutResult = Awaited<ReturnType<typeof put>>;
@@ -111,6 +115,14 @@ describe("memory store", () => {
     wider[19] = 2; // IHDR width; the header is all the sniffer reads
     await store.put(UP, wider);
     expect((await store.get(UP))?.info).toEqual({ mime: "image/png", width: 2, height: 1 });
+  });
+
+  it("an img_ id may hold a GIF; an up_ id may not", async () => {
+    const store = createMemoryStore();
+    await store.put(IMG, GIF_BYTES);
+    expect((await store.get(IMG))?.info).toEqual(GIF);
+    await expect(store.put(UP, GIF_BYTES)).rejects.toThrow("not a supported image");
+    expect(await store.get(UP)).toBeNull();
   });
 
   it("put rejects bytes that are not a supported image and stores nothing", async () => {
@@ -237,6 +249,23 @@ describe("blob store", () => {
 
     vi.mocked(put).mockRejectedValueOnce(new Error("Vercel Blob: Access denied"));
     await expect(store().put(IMG, PNG_BYTES)).rejects.toThrow("Vercel Blob: Access denied");
+  });
+
+  it("put: a GIF goes to an img_ id as image/gif; an up_ id rejects it before the SDK is called", async () => {
+    vi.mocked(put).mockResolvedValue(putResult(`${BASE}/img/${HEX}`));
+    await store().put(IMG, GIF_BYTES);
+    expect(vi.mocked(put).mock.calls[0]![2]).toMatchObject({ contentType: "image/gif" });
+
+    vi.mocked(put).mockClear();
+    await expect(store().put(UP, GIF_BYTES)).rejects.toThrow("not a supported image");
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("get: reads a GIF back from an img_ id; GIF bytes under an up_ id throw", async () => {
+    fetchMock.mockResolvedValue(new Response(GIF_BYTES, { status: 200 }));
+    expect((await store().get(IMG))?.info).toEqual(GIF);
+    fetchMock.mockResolvedValue(new Response(GIF_BYTES, { status: 200 }));
+    await expect(store().get(UP)).rejects.toThrow("stored object is not a supported image");
   });
 
   it("put: SVG bytes are rejected before the SDK is called", async () => {

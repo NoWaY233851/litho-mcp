@@ -23,6 +23,12 @@ export const IMAGE_PARAMS = [
 
 export type ImageParamName = (typeof IMAGE_PARAMS)[number];
 
+// Animated GIF settings, sent only with output_format gif. OpenRouter documents them as request
+// fields but the catalog doesn't declare them (docs/design/0011-animated-gif-output.md).
+export const GIF_PARAMS = ["frame_count", "frame_duration_ms"] as const;
+
+export type GifParamName = (typeof GIF_PARAMS)[number];
+
 export type ImageParams = {
   aspect_ratio?: string;
   resolution?: string;
@@ -31,6 +37,8 @@ export type ImageParams = {
   output_format?: string;
   output_compression?: number;
   seed?: number;
+  frame_count?: number;
+  frame_duration_ms?: number;
 };
 
 // A boolean descriptor means "supported, value unconstrained", not that the value is a boolean.
@@ -56,8 +64,14 @@ const PRICING_QUERY = "?output_modalities=image";
 const FETCH_TIMEOUT_MS = 15_000;
 const CACHE_TTL_MS = 3_600_000;
 const PRICE_KEYS = ["image", "image_output", "prompt"] as const;
-// Output formats the image store accepts (src/images/sniff.ts).
-const STORABLE_FORMATS: readonly string[] = ["png", "jpeg", "webp"];
+// Output formats the image store accepts for a generated image (src/images/sniff.ts).
+const STORABLE_FORMATS: readonly string[] = ["png", "jpeg", "webp", "gif"];
+
+// OpenAI's documented ranges for GPT Image 2.6, used until the catalog declares its own.
+const GIF_PARAM_RANGES: Record<GifParamName, ParamDescriptor> = {
+  frame_count: { type: "range", min: 2, max: 16 },
+  frame_duration_ms: { type: "range", min: 20, max: 2000 },
+};
 
 // Module-level so a reused Fluid instance shares one catalog; a cold instance simply refetches.
 // Only successful results are stored, so a transient failure is retried by the next call.
@@ -196,7 +210,20 @@ function supportedParams(model: ImageModel): ImageParamName[] {
   return IMAGE_PARAMS.filter((name) => name in model.params);
 }
 
-function checkValue(modelId: string, name: ImageParamName, descriptor: ParamDescriptor, value: unknown): string | null {
+function declaresGif(model: ImageModel): boolean {
+  const descriptor = model.params.output_format;
+  return descriptor?.type === "enum" && descriptor.values.includes("gif");
+}
+
+const gifParamDescriptor = (model: ImageModel, name: GifParamName): ParamDescriptor =>
+  model.params[name] ?? GIF_PARAM_RANGES[name];
+
+function checkValue(
+  modelId: string,
+  name: ImageParamName | GifParamName,
+  descriptor: ParamDescriptor,
+  value: unknown,
+): string | null {
   if (descriptor.type === "enum") {
     if (typeof value === "string" && descriptor.values.includes(value)) return null;
     return `Model "${modelId}" does not accept ${name} ${JSON.stringify(value)}. Allowed values: ${descriptor.values.join(", ")}.`;
@@ -218,11 +245,10 @@ export function validateRequest(
   mode: "generate" | "edit",
 ): string | null {
   // A format the server can't store is rejected before anything else, even when the model
-  // declares it (the GPT Image 2.6 series offers gif): only sniffed PNG, JPEG and WebP are stored,
-  // so the paid result would be discarded.
+  // declares it: the paid result would be discarded.
   const format = params.output_format;
   if (typeof format === "string" && !STORABLE_FORMATS.includes(format.toLowerCase())) {
-    return `Model "${model.id}": ${truncate(format, 20).toUpperCase()} output is not supported. Use output_format png, jpeg or webp where the model offers it.`;
+    return `Model "${model.id}": ${truncate(format, 20).toUpperCase()} output is not supported. Use output_format png, jpeg, webp or gif where the model offers it.`;
   }
 
   const limits = referenceLimits(model);
@@ -251,6 +277,19 @@ export function validateRequest(
     const problem = checkValue(model.id, name, descriptor, value);
     if (problem) return problem;
   }
+
+  const gif = typeof format === "string" && format.toLowerCase() === "gif";
+  for (const name of GIF_PARAMS) {
+    const value = params[name];
+    if (value === undefined) continue;
+    if (!gif) return `Model "${model.id}": ${name} applies only to output_format gif.`;
+    const problem = checkValue(model.id, name, gifParamDescriptor(model, name), value);
+    if (problem) return problem;
+  }
+  // OpenAI documents that GIF output takes no custom compression.
+  if (gif && params.output_compression !== undefined) {
+    return `Model "${model.id}": output_compression is not supported with output_format gif.`;
+  }
   return null;
 }
 
@@ -259,11 +298,12 @@ export function summarizeModel(m: ImageModel): {
   name: string;
   can_edit: boolean;
   max_references: number;
-  params: Partial<Record<ImageParamName, ParamDescriptor>>;
+  params: Partial<Record<ImageParamName | GifParamName, ParamDescriptor>>;
   pricing: Record<string, string>;
 } {
   const limits = referenceLimits(m);
-  const params: Partial<Record<ImageParamName, ParamDescriptor>> = {};
+  const params: Partial<Record<ImageParamName | GifParamName, ParamDescriptor>> = {};
   for (const name of supportedParams(m)) params[name] = m.params[name];
+  if (declaresGif(m)) for (const name of GIF_PARAMS) params[name] = gifParamDescriptor(m, name);
   return { id: m.id, name: m.name, can_edit: limits.canEdit, max_references: limits.max, params, pricing: m.pricing };
 }

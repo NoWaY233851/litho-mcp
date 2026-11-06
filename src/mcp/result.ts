@@ -35,6 +35,8 @@ export function imageResult(r: ImageResultInput): CallToolResult {
     r.aspectRatio ? `aspect ratio: ${r.aspectRatio}` : `size: ${r.info.width}×${r.info.height}`,
     r.costUsd === null ? "cost: unknown" : `cost: ${formatCost(r.costUsd)}`,
   ];
+  // The thumbnail is a still of the first frame, so Claude would otherwise take a GIF for a still.
+  if (r.info.mime === "image/gif") lines.push("format: GIF; the preview shows only the first frame");
   if (r.parent) lines.push(`edited from ${r.parent}`);
 
   const content: CallToolResult["content"] = [];

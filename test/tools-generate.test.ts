@@ -4,7 +4,7 @@ import { loadConfig } from "../src/config.js";
 import { createMemoryStore } from "../src/images/store.js";
 import { GenerateArgs, generateImage, listModels } from "../src/mcp/tools.js";
 import { _resetModelCache } from "../src/openrouter/models.js";
-import { PNG_B64, fakeDeps, fakeOpenRouter, fullEnv } from "./helpers.js";
+import { GIF_B64, PNG_B64, fakeDeps, fakeOpenRouter, fullEnv } from "./helpers.js";
 
 const FLARE = "openai/gpt-image-2.5-flare";
 const config = loadConfig({ ...fullEnv, DEFAULT_MODEL: FLARE });
@@ -235,6 +235,42 @@ describe("generateImage", () => {
   });
 });
 
+describe("generateImage: animated GIF", () => {
+  const FLARE_26 = "openai/gpt-image-2.6-flare";
+
+  it("sends the frame settings, stores the GIF and tells Claude the preview is the first frame", async () => {
+    const { or, deps } = setup({ images: () => Response.json({ data: [{ b64_json: GIF_B64, media_type: "image/gif" }], usage: { cost: 0.06 } }) });
+    const r = await generateImage(deps, {
+      prompt: "a waving cat",
+      model: FLARE_26,
+      output_format: "gif",
+      frame_count: 9,
+      frame_duration_ms: 200,
+    });
+
+    expect(r.isError).toBeFalsy();
+    expect(or.posts()[0]!.body).toMatchObject({ model: FLARE_26, output_format: "gif", frame_count: 9, frame_duration_ms: 200 });
+    const sc = r.structuredContent as Record<string, unknown>;
+    expect(sc).toMatchObject({ kind: "image", mime: "image/gif", width: 1, height: 1, cost_usd: 0.06 });
+    expect(texts(r)).toContain("format: GIF; the preview shows only the first frame");
+    expect((await deps.store.get(sc.id as string))?.info.mime).toBe("image/gif");
+  });
+
+  it("rejects frame settings without output_format gif before any paid call", async () => {
+    const { or, deps } = setup();
+    const r = await generateImage(deps, { prompt: "a waving cat", model: FLARE_26, frame_count: 9 });
+    expect(r.isError).toBe(true);
+    expect(texts(r)[0]).toMatch(/frame_count applies only to output_format gif/);
+    expect(or.posts()).toHaveLength(0);
+  });
+
+  it("does not add the format line for other formats", async () => {
+    const { deps } = setup();
+    const r = await generateImage(deps, { prompt: "a cat" });
+    expect(texts(r).some((t) => t.startsWith("format:"))).toBe(false);
+  });
+});
+
 describe("GenerateArgs", () => {
   it("requires a non-empty prompt and bounds the numeric parameters", () => {
     expect(GenerateArgs.safeParse({ prompt: "" }).success).toBe(false);
@@ -242,6 +278,9 @@ describe("GenerateArgs", () => {
     expect(GenerateArgs.safeParse({ prompt: "a", output_compression: 1.5 }).success).toBe(false);
     expect(GenerateArgs.safeParse({ prompt: "a", seed: 1.5 }).success).toBe(false);
     expect(GenerateArgs.safeParse({ prompt: "a", output_compression: 0, seed: -3 }).success).toBe(true);
+    expect(GenerateArgs.safeParse({ prompt: "a", frame_count: 2.5 }).success).toBe(false);
+    expect(GenerateArgs.safeParse({ prompt: "a", frame_duration_ms: 99.5 }).success).toBe(false);
+    expect(GenerateArgs.safeParse({ prompt: "a", output_format: "gif", frame_count: 9, frame_duration_ms: 200 }).success).toBe(true);
   });
 });
 

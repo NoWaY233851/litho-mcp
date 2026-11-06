@@ -1,6 +1,6 @@
 # 0010. Store images in a public Vercel Blob store; delete after 30 days
 
-- Status: Accepted. Supersedes [0004](0004-image-storage-and-delivery.md). Validated on web, desktop and iOS on 2026-10-17, with OIDC credentials on 2026-10-19 and in production acceptance on 2026-10-18 and 2026-10-19.
+- Status: Accepted. Supersedes [0004](0004-image-storage-and-delivery.md). Validated on web, desktop and iOS on 2026-10-17, with OIDC credentials on 2026-10-19 and in production acceptance on 2026-10-18 and 2026-10-19. GIF output added by [0011](0011-animated-gif-output.md).
 - Date: 2026-10-17
 
 ## Context
@@ -45,7 +45,7 @@ Moving to Vercel ([0008](0008-vercel-hobby.md)) removes R2, its lifecycle rules 
   - `contentType` is always set explicitly, from the detected format;
   - `allowOverwrite` is true only for `up/`, because a re-upload replaces the photo. Generated images are never overwritten;
   - `cacheControlMaxAge` is 60 for `up/` objects. `img/` objects keep the default cache lifetime, since they never change.
-- Only PNG, JPEG and WebP are stored, detected by magic bytes.
+- Only PNG, JPEG and WebP are stored, detected by magic bytes. Generated images may also be GIF ([0011](0011-animated-gif-output.md)).
 - **No per-object metadata.** Width, height and type are re-read from the bytes when needed. Model, cost and parent are known at call time and go into the tool result text. The prompt isn't stored.
 
 **Full-size delivery**
