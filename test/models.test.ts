@@ -61,6 +61,7 @@ describe("getImageModels", () => {
     expect(models.map((m) => m.id).sort()).toEqual([
       "krea/k3-edit",
       "openai/gpt-image-2.5-flare",
+      "openai/gpt-image-2.6-flare",
       "recraft/recraft-v4.1-flash",
       "recraft/recraft-v4.1-vector",
     ]);
@@ -127,7 +128,7 @@ describe("getImageModels", () => {
     failing = false;
     const before = calls.length;
     const models = await getImageModels(cfg, f);
-    expect(models).toHaveLength(4);
+    expect(models).toHaveLength(5);
     expect(calls.length).toBeGreaterThan(before);
   });
 
@@ -168,6 +169,7 @@ describe("getImageModels", () => {
 
 describe("validateRequest and summarizeModel", () => {
   let flare: ImageModel;
+  let flare26: ImageModel;
   let k3: ImageModel;
   let flash: ImageModel;
   let vector: ImageModel;
@@ -175,6 +177,7 @@ describe("validateRequest and summarizeModel", () => {
   beforeEach(async () => {
     const models = await loadModels();
     flare = models["openai/gpt-image-2.5-flare"]!;
+    flare26 = models["openai/gpt-image-2.6-flare"]!;
     k3 = models["krea/k3-edit"]!;
     flash = models["recraft/recraft-v4.1-flash"]!;
     vector = models["recraft/recraft-v4.1-vector"]!;
@@ -229,6 +232,18 @@ describe("validateRequest and summarizeModel", () => {
   it("output_format svg is always rejected", () => {
     expect(validateRequest(vector, { output_format: "svg" }, 0, "generate")).toMatch(/SVG.*not supported/);
     expect(validateRequest(flare, { output_format: "svg" }, 0, "generate")).toMatch(/SVG.*not supported/);
+  });
+
+  it("rejects a declared output_format the server cannot store, before any paid call", () => {
+    // The 2.6 series declares gif, but only PNG, JPEG and WebP are stored.
+    expect(flare26.params.output_format).toMatchObject({ values: expect.arrayContaining(["gif"]) });
+    const message = validateRequest(flare26, { output_format: "gif" }, 0, "generate");
+    expect(message).toMatch(/GIF output is not supported/);
+    expect(message).toContain("openai/gpt-image-2.6-flare");
+    expect(validateRequest(flare26, { output_format: "GIF" }, 0, "edit")).toMatch(/GIF output is not supported/);
+    for (const format of ["png", "jpeg", "webp"]) {
+      expect(validateRequest(flare26, { output_format: format }, 0, "generate")).toBeNull();
+    }
   });
 
   it("includes the model id in messages", () => {

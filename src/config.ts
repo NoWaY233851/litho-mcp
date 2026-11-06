@@ -29,7 +29,7 @@ export interface Config {
 }
 
 const MIN_SECRET_LENGTH = 32;
-const DEFAULT_MODEL = "openai/gpt-image-2.5-flare";
+const DEFAULT_MODEL = "openai/gpt-image-2.6-flare";
 const DEFAULT_RETENTION_DAYS = 30;
 
 type Env = Record<string, string | undefined>;

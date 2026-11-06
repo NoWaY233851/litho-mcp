@@ -32,7 +32,7 @@ describe("loadConfig", () => {
   it("applies defaults for the optional variables", () => {
     const { DEFAULT_MODEL: _m, RETENTION_DAYS: _r, OPENROUTER_REFERER: _f, ...required } = fullEnv;
     const config = loadConfig(required);
-    expect(config.defaultModel).toBe("openai/gpt-image-2.5-flare");
+    expect(config.defaultModel).toBe("openai/gpt-image-2.6-flare");
     expect(config.retentionDays).toBe(30);
     expect(config.openrouterReferer).toBe("");
   });
